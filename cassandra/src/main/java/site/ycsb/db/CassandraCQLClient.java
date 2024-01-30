@@ -28,10 +28,7 @@ import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.BoundStatement;
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
-import com.datastax.driver.core.querybuilder.Update;
+import com.datastax.driver.core.querybuilder.*;
 import site.ycsb.ByteArrayByteIterator;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
@@ -86,6 +83,9 @@ public class CassandraCQLClient extends DB {
   private static ConsistencyLevel writeConsistencyLevel = ConsistencyLevel.QUORUM;
 
   public static final String YCSB_KEY = "y_id";
+
+  public static final String FIELD0 = "field0";
+
   public static final String KEYSPACE_PROPERTY = "cassandra.keyspace";
   public static final String KEYSPACE_PROPERTY_DEFAULT = "ycsb";
   public static final String USERNAME_PROPERTY = "cassandra.username";
@@ -299,10 +299,17 @@ public class CassandraCQLClient extends DB {
           }
         }
 
-        stmt = session.prepare(selectBuilder.from(table)
-                               .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()))
-                               .limit(1));
-        stmt.setConsistencyLevel(readConsistencyLevel);
+        Select readStmt = selectBuilder.from(table)
+            .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()))
+            .limit(1);
+
+        readStmt.setSerialConsistencyLevel(ConsistencyLevel.SERIAL);
+        readStmt.setConsistencyLevel(ConsistencyLevel.SERIAL);
+
+        System.out.println(readStmt);
+
+        stmt = session.prepare(readStmt);
+
         if (trace) {
           stmt.enableTracing();
         }
@@ -481,9 +488,14 @@ public class CassandraCQLClient extends DB {
 
         // Add key
         updateStmt.where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
+        updateStmt.onlyIf(QueryBuilder.ne(FIELD0, "test"));
+        updateStmt.setSerialConsistencyLevel(ConsistencyLevel.SERIAL);
+        // updateStmt.setConsistencyLevel(ConsistencyLevel.SERIAL);
+
+        System.out.println(updateStmt);
 
         stmt = session.prepare(updateStmt);
-        stmt.setConsistencyLevel(writeConsistencyLevel);
+
         if (trace) {
           stmt.enableTracing();
         }
@@ -492,6 +504,7 @@ public class CassandraCQLClient extends DB {
         if (prevStmt != null) {
           stmt = prevStmt;
         }
+
       }
 
       if (logger.isDebugEnabled()) {
@@ -516,6 +529,7 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
+      e.printStackTrace();
       logger.error(MessageFormatter.format("Error updating key: {}", key).getMessage(), e);
     }
 
@@ -554,8 +568,14 @@ public class CassandraCQLClient extends DB {
           insertStmt.value(field, QueryBuilder.bindMarker());
         }
 
+        insertStmt.ifNotExists();
+//        insertStmt.setSerialConsistencyLevel(ConsistencyLevel.SERIAL);
+//        insertStmt.setConsistencyLevel(ConsistencyLevel.SERIAL);
+
+        System.out.println(insertStmt);
+
         stmt = session.prepare(insertStmt);
-        stmt.setConsistencyLevel(writeConsistencyLevel);
+
         if (trace) {
           stmt.enableTracing();
         }
@@ -587,6 +607,7 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
+      e.printStackTrace();
       logger.error(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
     }
 
