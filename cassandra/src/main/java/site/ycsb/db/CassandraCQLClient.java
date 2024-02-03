@@ -107,9 +107,9 @@ public class CassandraCQLClient extends DB {
    */
   private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
 
-  private static boolean debug = true;
+  private static boolean debug = false;
 
-  private static boolean trace = true;
+  private static boolean trace = false;
   
   /**
    * Initialize any state for this DB. Called once per DB instance; there is one
