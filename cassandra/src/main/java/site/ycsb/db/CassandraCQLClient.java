@@ -18,10 +18,8 @@
 package site.ycsb.db;
 
 import com.datastax.driver.core.*;
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
-import com.datastax.driver.core.querybuilder.Update;
+import com.datastax.driver.core.policies.LoadBalancingPolicy;
+import com.datastax.driver.core.querybuilder.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.MessageFormatter;
@@ -207,11 +205,21 @@ public class CassandraCQLClient extends DB {
         logger.info("Connected to cluster: {}\n",
             metadata.getClusterName());
 
+        LoadBalancingPolicy loadBalancingPolicy =
+            cluster.getConfiguration().getPolicies().getLoadBalancingPolicy();
+
         for (Host discoveredHost : metadata.getAllHosts()) {
-          logger.info("Datacenter: {}; Host: {}; Rack: {}\n",
-              discoveredHost.getDatacenter(), discoveredHost.getAddress(),
-              discoveredHost.getRack());
+          logger.info("Datacenter: {}; Host: {}; Rack: {}; Distance: {}\n",
+              discoveredHost.getDatacenter(),
+              discoveredHost.getAddress(),
+              discoveredHost.getRack(),
+              loadBalancingPolicy.distance(discoveredHost));
         }
+
+        // access local but not remote
+        cluster.getConfiguration().getPoolingOptions()
+            .setCoreConnectionsPerHost(HostDistance.REMOTE, 0)
+            .setConnectionsPerHost(HostDistance.LOCAL, 1, Runtime.getRuntime().availableProcessors());
 
         session = cluster.connect(keyspace);
 
@@ -283,13 +291,10 @@ public class CassandraCQLClient extends DB {
           }
         }
 
-        Select readStmt = selectBuilder.from(table)
-            .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()))
-            .limit(1);
+        Select.Where readStmt = selectBuilder.from(table)
+            .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
 
         readStmt.setConsistencyLevel(readConsistencyLevel);
-
-        System.out.println(readStmt);
 
         stmt = session.prepare(readStmt);
 
