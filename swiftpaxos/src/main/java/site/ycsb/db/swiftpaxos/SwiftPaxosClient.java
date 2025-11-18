@@ -66,14 +66,17 @@ public class SwiftPaxosClient extends DB {
 
   @Override
   public void init() throws DBException {
-    boolean leaderless = LEADERLESS_PROPERTY_DEFAULT.equals(getProperties().getProperty(LEADERLESS_PROPERTY));
-    boolean fast = FAST_PROPERTY_DEFAULT.equals(getProperties().getProperty(FAST_PROPERTY));
+    boolean leaderless = Boolean.parseBoolean(getProperties().containsKey(LEADERLESS_PROPERTY) ?
+        getProperties().getProperty(LEADERLESS_PROPERTY) : LEADERLESS_PROPERTY_DEFAULT);
+    boolean fast = Boolean.parseBoolean(getProperties().containsKey(FAST_PROPERTY) ?
+        getProperties().getProperty(FAST_PROPERTY) : FAST_PROPERTY_DEFAULT);
     String master = getProperties().containsKey(MADDR_PROPERTY) ?
         getProperties().getProperty(MADDR_PROPERTY) : MADDR_PROPERTY_DEFAULT;
     int port = getProperties().containsKey(MPORT_PROPERTY) ?
         Integer.parseInt(getProperties().getProperty(MPORT_PROPERTY)) : MPORT_PROPERTY_DEFAULT;
 
-    this.verbose = VERBOSE_PROPERTY_DEFAULT.equals(getProperties().getProperty(VERBOSE_PROPERTY));
+    this.verbose = Boolean.parseBoolean(getProperties().containsKey(VERBOSE_PROPERTY) ?
+        getProperties().getProperty(VERBOSE_PROPERTY) : VERBOSE_PROPERTY_DEFAULT);
     this.handle = new SwiftPaxos(BUFFER_SIZE, master, port, fast, leaderless, verbose);
 
     try {
