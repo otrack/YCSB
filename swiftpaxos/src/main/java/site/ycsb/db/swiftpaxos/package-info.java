@@ -18,5 +18,5 @@
 /**
  * The YCSB binding for the <a href="https://github.com/imdea-software/swiftpaxos">Swiftpaxos</a> library.
  */
-package site.ycsb.db;
+package site.ycsb.db.swiftpaxos;
 

@@ -15,7 +15,7 @@
  * LICENSE file.
  */
 
-package site.ycsb.db;
+package site.ycsb.db.swiftpaxos;
 
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
