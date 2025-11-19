@@ -2,6 +2,28 @@
 
 This directory contains the Docker setup for running YCSB in containers.
 
+## Quick Start Example
+
+Here's a complete example to get started with YCSB in Docker:
+
+```bash
+# 1. Build a Docker image with the basic binding (no external database needed)
+bin/image.sh
+
+# 2. Test with the basic in-memory database
+docker run ycsb:latest load basic -P workloads/workloada
+docker run ycsb:latest run basic -P workloads/workloada
+
+# 3. Build an image with specific bindings
+bin/image.sh cassandra redis mongodb
+
+# 4. Use the image with a real database (example with Redis)
+docker network create ycsb-net
+docker run -d --name redis --network=ycsb-net redis:latest
+docker run --network=ycsb-net ycsb:latest load redis -P workloads/workloada -p redis.host=redis
+docker run --network=ycsb-net ycsb:latest run redis -P workloads/workloada -p redis.host=redis
+```
+
 ## Building a Docker Image
 
 Use the `bin/image.sh` script to build a Docker image with specific YCSB bindings:
