@@ -126,11 +126,12 @@ if [ $# -eq 0 ]; then\n\
                 ;;\n\
         esac\n\
         \n\
-        CMD_ARGS="$YCSB_COMMAND $YCSB_BINDING"\n\
+        # Build command arguments using an array for safe handling\n\
+        CMD_ARGS=("$YCSB_COMMAND" "$YCSB_BINDING")\n\
         \n\
         # Add workload file if specified\n\
         if [ -n "$YCSB_WORKLOAD" ]; then\n\
-            CMD_ARGS="$CMD_ARGS -P $YCSB_WORKLOAD"\n\
+            CMD_ARGS+=("-P" "$YCSB_WORKLOAD")\n\
         fi\n\
         \n\
         # Add recordcount if specified (validate it is numeric)\n\
@@ -139,7 +140,7 @@ if [ $# -eq 0 ]; then\n\
                 echo "[ERROR] YCSB_RECORDCOUNT must be a positive integer"\n\
                 exit 1\n\
             fi\n\
-            CMD_ARGS="$CMD_ARGS -p recordcount=$YCSB_RECORDCOUNT"\n\
+            CMD_ARGS+=("-p" "recordcount=$YCSB_RECORDCOUNT")\n\
         fi\n\
         \n\
         # Add operationcount if specified (validate it is numeric)\n\
@@ -148,7 +149,7 @@ if [ $# -eq 0 ]; then\n\
                 echo "[ERROR] YCSB_OPERATIONCOUNT must be a positive integer"\n\
                 exit 1\n\
             fi\n\
-            CMD_ARGS="$CMD_ARGS -p operationcount=$YCSB_OPERATIONCOUNT"\n\
+            CMD_ARGS+=("-p" "operationcount=$YCSB_OPERATIONCOUNT")\n\
         fi\n\
         \n\
         # Add threads if specified (validate it is numeric)\n\
@@ -157,7 +158,7 @@ if [ $# -eq 0 ]; then\n\
                 echo "[ERROR] YCSB_THREADS must be a positive integer"\n\
                 exit 1\n\
             fi\n\
-            CMD_ARGS="$CMD_ARGS -threads $YCSB_THREADS"\n\
+            CMD_ARGS+=("-threads" "$YCSB_THREADS")\n\
         fi\n\
         \n\
         # Add target if specified (validate it is numeric)\n\
@@ -166,21 +167,23 @@ if [ $# -eq 0 ]; then\n\
                 echo "[ERROR] YCSB_TARGET must be a positive integer"\n\
                 exit 1\n\
             fi\n\
-            CMD_ARGS="$CMD_ARGS -target $YCSB_TARGET"\n\
+            CMD_ARGS+=("-target" "$YCSB_TARGET")\n\
         fi\n\
         \n\
-        # Add any additional options\n\
+        # Add any additional options (these are appended as-is for flexibility)\n\
         if [ -n "$YCSB_OPTS" ]; then\n\
-            CMD_ARGS="$CMD_ARGS $YCSB_OPTS"\n\
+            # Split YCSB_OPTS by spaces and add to array\n\
+            read -ra OPTS_ARRAY <<< "$YCSB_OPTS"\n\
+            CMD_ARGS+=("${OPTS_ARRAY[@]}")\n\
         fi\n\
         \n\
         # Log the command (excluding YCSB_OPTS which may contain sensitive data)\n\
         if [ -n "$YCSB_OPTS" ]; then\n\
             echo "Running YCSB with command: $YCSB_COMMAND, binding: $YCSB_BINDING (additional options provided)"\n\
         else\n\
-            echo "Running: /ycsb/bin/ycsb.sh $CMD_ARGS"\n\
+            echo "Running: /ycsb/bin/ycsb.sh ${CMD_ARGS[*]}"\n\
         fi\n\
-        exec /ycsb/bin/ycsb.sh $CMD_ARGS\n\
+        exec /ycsb/bin/ycsb.sh "${CMD_ARGS[@]}"\n\
     else\n\
         echo "YCSB Docker Container"\n\
         echo ""\n\
