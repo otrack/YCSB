@@ -37,19 +37,31 @@ RUN if [ -z "$BINDINGS" ]; then \
         mvn -pl site.ycsb:core${BINDINGS} -am clean package -DskipTests; \
     fi
 
-# Create a script to copy only built bindings
+# Copy dependencies to target/dependency for classpath resolution
+RUN mvn dependency:copy-dependencies -pl site.ycsb:core -DoutputDirectory=core/target/dependency -DincludeScope=runtime
+
+# Create distribution structure
 RUN mkdir -p /ycsb-dist/bin /ycsb-dist/workloads /ycsb-dist/core/target /ycsb-dist/conf && \
     cp -r /ycsb/bin/* /ycsb-dist/bin/ && \
     cp -r /ycsb/workloads/* /ycsb-dist/workloads/ && \
-    cp -r /ycsb/core/target/* /ycsb-dist/core/target/ && \
-    # Copy all built binding targets \
+    # Copy pom.xml so ycsb.sh detects this as source checkout \
+    cp /ycsb/pom.xml /ycsb-dist/ && \
+    # Copy core JARs and dependencies \
+    cp -r /ycsb/core/target/*.jar /ycsb-dist/core/target/ && \
+    mkdir -p /ycsb-dist/core/target/dependency && \
+    cp -r /ycsb/core/target/dependency/* /ycsb-dist/core/target/dependency/ && \
+    # Copy all built binding targets with dependencies \
     for dir in /ycsb/*/target; do \
         if [ -d "$dir" ]; then \
             binding=$(basename $(dirname "$dir")); \
             if [ "$binding" != "core" ] && [ "$binding" != "distribution" ] && [ "$binding" != "binding-parent" ]; then \
                 echo "Copying binding: $binding"; \
                 mkdir -p "/ycsb-dist/$binding/target"; \
-                cp -r "$dir"/* "/ycsb-dist/$binding/target/"; \
+                cp "$dir"/*.jar "/ycsb-dist/$binding/target/" 2>/dev/null || true; \
+                if [ -d "$dir/dependency" ]; then \
+                    mkdir -p "/ycsb-dist/$binding/target/dependency"; \
+                    cp -r "$dir/dependency"/* "/ycsb-dist/$binding/target/dependency/" 2>/dev/null || true; \
+                fi; \
             fi; \
         fi; \
     done
