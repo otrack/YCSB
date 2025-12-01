@@ -83,6 +83,9 @@ FROM eclipse-temurin:17-jre
 # Set working directory
 WORKDIR /ycsb
 
+# Install ping utility
+RUN apt-get update && apt-get install -y iputils-ping
+
 # Copy the distribution from builder
 COPY --from=builder /ycsb-dist /ycsb
 
