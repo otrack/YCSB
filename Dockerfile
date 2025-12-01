@@ -137,7 +137,7 @@ if [ $# -eq 0 ]; then\n\
         # Add recordcount if specified (validate it is numeric)\n\
         if [ -n "$YCSB_RECORDCOUNT" ]; then\n\
             if ! echo "$YCSB_RECORDCOUNT" | grep -qE "^[0-9]+$"; then\n\
-                echo "[ERROR] YCSB_RECORDCOUNT must be a positive integer"\n\
+                echo "[ERROR] YCSB_RECORDCOUNT must be a non-negative integer"\n\
                 exit 1\n\
             fi\n\
             CMD_ARGS+=("-p" "recordcount=$YCSB_RECORDCOUNT")\n\
@@ -146,7 +146,7 @@ if [ $# -eq 0 ]; then\n\
         # Add operationcount if specified (validate it is numeric)\n\
         if [ -n "$YCSB_OPERATIONCOUNT" ]; then\n\
             if ! echo "$YCSB_OPERATIONCOUNT" | grep -qE "^[0-9]+$"; then\n\
-                echo "[ERROR] YCSB_OPERATIONCOUNT must be a positive integer"\n\
+                echo "[ERROR] YCSB_OPERATIONCOUNT must be a non-negative integer"\n\
                 exit 1\n\
             fi\n\
             CMD_ARGS+=("-p" "operationcount=$YCSB_OPERATIONCOUNT")\n\
@@ -155,7 +155,7 @@ if [ $# -eq 0 ]; then\n\
         # Add threads if specified (validate it is numeric)\n\
         if [ -n "$YCSB_THREADS" ]; then\n\
             if ! echo "$YCSB_THREADS" | grep -qE "^[0-9]+$"; then\n\
-                echo "[ERROR] YCSB_THREADS must be a positive integer"\n\
+                echo "[ERROR] YCSB_THREADS must be a non-negative integer"\n\
                 exit 1\n\
             fi\n\
             CMD_ARGS+=("-threads" "$YCSB_THREADS")\n\
@@ -164,7 +164,7 @@ if [ $# -eq 0 ]; then\n\
         # Add target if specified (validate it is numeric)\n\
         if [ -n "$YCSB_TARGET" ]; then\n\
             if ! echo "$YCSB_TARGET" | grep -qE "^[0-9]+$"; then\n\
-                echo "[ERROR] YCSB_TARGET must be a positive integer"\n\
+                echo "[ERROR] YCSB_TARGET must be a non-negative integer"\n\
                 exit 1\n\
             fi\n\
             CMD_ARGS+=("-target" "$YCSB_TARGET")\n\

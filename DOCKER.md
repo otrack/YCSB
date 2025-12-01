@@ -83,7 +83,9 @@ YCSB Docker images support environment variables for convenient configuration, e
 | `YCSB_OPERATIONCOUNT` | Number of operations | `100000` |
 | `YCSB_THREADS` | Number of client threads | `4` |
 | `YCSB_TARGET` | Target operations per second | `1000` |
-| `YCSB_OPTS` | Additional YCSB options | `-p redis.host=localhost` |
+| `YCSB_OPTS` | Additional YCSB options (space-separated) | `-p redis.host=localhost` |
+
+**Note:** `YCSB_OPTS` is split by whitespace, so option values containing spaces are not supported directly. Use individual `-p key=value` pairs without spaces in values.
 
 ```bash
 # Using environment variables
