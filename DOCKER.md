@@ -162,7 +162,31 @@ See `bin/bindings.properties` for a complete list of available bindings. Common 
 - `elasticsearch` - Elasticsearch
 - `hbase1` - Apache HBase 1.x
 - `jdbc` - JDBC-compliant databases
+- `swiftpaxos` - SwiftPaxos distributed consensus
 - And many more...
+
+## Special Bindings
+
+### SwiftPaxos Binding
+
+The SwiftPaxos binding requires building the swiftpaxos-client dependency from source. When you include `swiftpaxos` in your bindings list, the Docker build will automatically:
+
+1. Clone the swiftpaxos repository (container branch)
+2. Build the client library using the Makefile
+3. Install the JAR to the local Maven repository
+4. Build the YCSB swiftpaxos binding
+
+```bash
+# Build image with SwiftPaxos binding
+bin/image.sh swiftpaxos
+
+# Run with SwiftPaxos
+docker run --network=host ycsb:latest load swiftpaxos \
+  -P workloads/workloada \
+  -p swiftpaxos.hosts=host1:port1,host2:port2
+```
+
+Note: Building with SwiftPaxos requires golang and takes longer due to the additional build steps.
 
 ## Image Size Optimization
 

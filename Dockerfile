@@ -16,8 +16,8 @@
 # Build stage
 FROM maven:3.9-eclipse-temurin-17 AS builder
 
-# Update CA certificates
-RUN apt-get update && apt-get install -y ca-certificates && update-ca-certificates
+# Update CA certificates and install git and golang for swiftpaxos support
+RUN apt-get update && apt-get install -y ca-certificates git golang && update-ca-certificates
 
 # Set working directory
 WORKDIR /ycsb
@@ -27,6 +27,16 @@ COPY . .
 
 # Build argument for specifying which bindings to build
 ARG BINDINGS=""
+
+# Check if swiftpaxos binding is requested and build the dependency first
+RUN if echo "$BINDINGS" | grep -q "swiftpaxos"; then \
+        echo "SwiftPaxos binding requested, building swiftpaxos-client first..."; \
+        cd /tmp && \
+        git clone --branch container https://github.com/imdea-software/swiftpaxos.git && \
+        cd swiftpaxos && \
+        make && \
+        cd /ycsb; \
+    fi
 
 # Build YCSB with specified bindings
 # Use -Psource-run profile to copy dependencies to target/dependency
