@@ -29,18 +29,14 @@ COPY . .
 ARG BINDINGS=""
 
 # Build YCSB with specified bindings
+# Use -Psource-run profile to copy dependencies to target/dependency
 RUN if [ -z "$BINDINGS" ]; then \
         echo "Building core only..."; \
-        mvn -pl site.ycsb:core -am clean package -DskipTests; \
+        mvn -Psource-run -pl site.ycsb:core -am clean package -DskipTests; \
     else \
         echo "Building core and bindings: $BINDINGS"; \
-        mvn -pl site.ycsb:core${BINDINGS} -am clean package -DskipTests; \
+        mvn -Psource-run -pl site.ycsb:core${BINDINGS} -am clean package -DskipTests; \
     fi
-
-# Copy dependencies to target/dependency for classpath resolution
-# The core module doesn't inherit from binding-parent, so we need to manually copy deps
-RUN mkdir -p /ycsb/core/target/dependency && \
-    mvn dependency:copy-dependencies -pl site.ycsb:core -DoutputDirectory=core/target/dependency -DincludeScope=runtime || true
 
 # Create distribution structure
 RUN mkdir -p /ycsb-dist/bin /ycsb-dist/workloads /ycsb-dist/core/target /ycsb-dist/conf && \
