@@ -38,7 +38,9 @@ RUN if [ -z "$BINDINGS" ]; then \
     fi
 
 # Copy dependencies to target/dependency for classpath resolution
-RUN mvn dependency:copy-dependencies -pl site.ycsb:core -DoutputDirectory=core/target/dependency -DincludeScope=runtime
+# The core module doesn't inherit from binding-parent, so we need to manually copy deps
+RUN mkdir -p /ycsb/core/target/dependency && \
+    mvn dependency:copy-dependencies -pl site.ycsb:core -DoutputDirectory=core/target/dependency -DincludeScope=runtime || true
 
 # Create distribution structure
 RUN mkdir -p /ycsb-dist/bin /ycsb-dist/workloads /ycsb-dist/core/target /ycsb-dist/conf && \
@@ -46,10 +48,13 @@ RUN mkdir -p /ycsb-dist/bin /ycsb-dist/workloads /ycsb-dist/core/target /ycsb-di
     cp -r /ycsb/workloads/* /ycsb-dist/workloads/ && \
     # Copy pom.xml so ycsb.sh detects this as source checkout \
     cp /ycsb/pom.xml /ycsb-dist/ && \
-    # Copy core JARs and dependencies \
+    # Copy core JARs \
     cp -r /ycsb/core/target/*.jar /ycsb-dist/core/target/ && \
+    # Copy core dependencies if they exist \
     mkdir -p /ycsb-dist/core/target/dependency && \
-    cp -r /ycsb/core/target/dependency/* /ycsb-dist/core/target/dependency/ && \
+    if [ -d /ycsb/core/target/dependency ] && [ "$(ls -A /ycsb/core/target/dependency 2>/dev/null)" ]; then \
+        cp -r /ycsb/core/target/dependency/* /ycsb-dist/core/target/dependency/; \
+    fi && \
     # Copy all built binding targets with dependencies \
     for dir in /ycsb/*/target; do \
         if [ -d "$dir" ]; then \
@@ -58,9 +63,9 @@ RUN mkdir -p /ycsb-dist/bin /ycsb-dist/workloads /ycsb-dist/core/target /ycsb-di
                 echo "Copying binding: $binding"; \
                 mkdir -p "/ycsb-dist/$binding/target"; \
                 cp "$dir"/*.jar "/ycsb-dist/$binding/target/" 2>/dev/null || true; \
-                if [ -d "$dir/dependency" ]; then \
+                if [ -d "$dir/dependency" ] && [ "$(ls -A "$dir/dependency" 2>/dev/null)" ]; then \
                     mkdir -p "/ycsb-dist/$binding/target/dependency"; \
-                    cp -r "$dir/dependency"/* "/ycsb-dist/$binding/target/dependency/" 2>/dev/null || true; \
+                    cp -r "$dir/dependency"/* "/ycsb-dist/$binding/target/dependency/"; \
                 fi; \
             fi; \
         fi; \
