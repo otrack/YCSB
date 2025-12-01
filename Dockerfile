@@ -16,8 +16,8 @@
 # Build stage
 FROM maven:3.9-eclipse-temurin-17 AS builder
 
-# Update CA certificates and install git and golang for swiftpaxos support
-RUN apt-get update && apt-get install -y ca-certificates git golang && update-ca-certificates
+# Update CA certificates and install git, golang, and build tools for swiftpaxos support
+RUN apt-get update && apt-get install -y ca-certificates git golang make build-essential && update-ca-certificates
 
 # Set working directory
 WORKDIR /ycsb
