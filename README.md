@@ -65,6 +65,22 @@ Getting Started
   the list of available workload properties.
 
 
+Running with Docker
+-------------------
+
+YCSB can be run in Docker containers for easy deployment and isolation.
+
+To build a Docker image with specific bindings:
+
+    bin/image.sh cassandra redis mongodb
+
+To run YCSB in a container:
+
+    docker run ycsb:latest load cassandra-cql -P workloads/workloada -p hosts=localhost
+
+See [DOCKER.md](DOCKER.md) for detailed documentation on using YCSB with Docker.
+
+
 Building from source
 --------------------
 
