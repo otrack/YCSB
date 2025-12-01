@@ -170,20 +170,9 @@ if [ $# -eq 0 ]; then\n\
             CMD_ARGS+=("-target" "$YCSB_TARGET")\n\
         fi\n\
         \n\
-        # Add any additional options (these are appended as-is for flexibility)\n\
-        if [ -n "$YCSB_OPTS" ]; then\n\
-            # Split YCSB_OPTS by spaces and add to array\n\
-            read -ra OPTS_ARRAY <<< "$YCSB_OPTS"\n\
-            CMD_ARGS+=("${OPTS_ARRAY[@]}")\n\
-        fi\n\
-        \n\
-        # Log the command (excluding YCSB_OPTS which may contain sensitive data)\n\
-        if [ -n "$YCSB_OPTS" ]; then\n\
-            echo "Running YCSB with command: $YCSB_COMMAND, binding: $YCSB_BINDING (additional options provided)"\n\
-        else\n\
-            echo "Running: /ycsb/bin/ycsb.sh ${CMD_ARGS[*]}"\n\
-        fi\n\
-        exec /ycsb/bin/ycsb.sh "${CMD_ARGS[@]}"\n\
+        # Log and execute the command\n\
+        echo "Running: /ycsb/bin/ycsb.sh ${CMD_ARGS[*]} $YCSB_OPTS"\n\
+        exec /ycsb/bin/ycsb.sh "${CMD_ARGS[@]}" $YCSB_OPTS\n\
     else\n\
         echo "YCSB Docker Container"\n\
         echo ""\n\
