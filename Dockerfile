@@ -96,26 +96,113 @@ RUN chmod +x /ycsb/bin/ycsb.sh && \
 # Set environment variables
 ENV YCSB_HOME=/ycsb
 
+# Define environment variables for YCSB parameters
+# These can be overridden at container runtime using docker run -e
+ENV YCSB_COMMAND=""
+ENV YCSB_BINDING=""
+ENV YCSB_WORKLOAD=""
+ENV YCSB_RECORDCOUNT=""
+ENV YCSB_OPERATIONCOUNT=""
+ENV YCSB_THREADS=""
+ENV YCSB_TARGET=""
+ENV YCSB_OPTS=""
+
 # Create entrypoint script
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# If no arguments provided, show help\n\
+# Build command from environment variables if no arguments provided\n\
 if [ $# -eq 0 ]; then\n\
-    echo "YCSB Docker Container"\n\
-    echo ""\n\
-    echo "Usage: docker run [docker-options] <image> <ycsb-command> <ycsb-options>"\n\
-    echo ""\n\
-    echo "YCSB Commands:"\n\
-    echo "  load    - Load data into the database"\n\
-    echo "  run     - Run the benchmark"\n\
-    echo "  shell   - Interactive YCSB shell"\n\
-    echo ""\n\
-    echo "Example:"\n\
-    echo "  docker run <image> load basic -P workloads/workloada"\n\
-    echo "  docker run <image> run basic -P workloads/workloada"\n\
-    echo ""\n\
-    exit 0\n\
+    # Check if environment variables are set for running YCSB\n\
+    if [ -n "$YCSB_COMMAND" ] && [ -n "$YCSB_BINDING" ]; then\n\
+        # Validate YCSB_COMMAND\n\
+        case "$YCSB_COMMAND" in\n\
+            load|run|shell)\n\
+                ;;\n\
+            *)\n\
+                echo "[ERROR] Invalid YCSB_COMMAND: $YCSB_COMMAND"\n\
+                echo "[ERROR] Expected one of: load, run, shell"\n\
+                exit 1\n\
+                ;;\n\
+        esac\n\
+        \n\
+        # Build command arguments using an array for safe handling\n\
+        CMD_ARGS=("$YCSB_COMMAND" "$YCSB_BINDING")\n\
+        \n\
+        # Add workload file if specified\n\
+        if [ -n "$YCSB_WORKLOAD" ]; then\n\
+            CMD_ARGS+=("-P" "$YCSB_WORKLOAD")\n\
+        fi\n\
+        \n\
+        # Add recordcount if specified (validate it is numeric)\n\
+        if [ -n "$YCSB_RECORDCOUNT" ]; then\n\
+            if ! echo "$YCSB_RECORDCOUNT" | grep -qE "^[0-9]+$"; then\n\
+                echo "[ERROR] YCSB_RECORDCOUNT must be a non-negative integer"\n\
+                exit 1\n\
+            fi\n\
+            CMD_ARGS+=("-p" "recordcount=$YCSB_RECORDCOUNT")\n\
+        fi\n\
+        \n\
+        # Add operationcount if specified (validate it is numeric)\n\
+        if [ -n "$YCSB_OPERATIONCOUNT" ]; then\n\
+            if ! echo "$YCSB_OPERATIONCOUNT" | grep -qE "^[0-9]+$"; then\n\
+                echo "[ERROR] YCSB_OPERATIONCOUNT must be a non-negative integer"\n\
+                exit 1\n\
+            fi\n\
+            CMD_ARGS+=("-p" "operationcount=$YCSB_OPERATIONCOUNT")\n\
+        fi\n\
+        \n\
+        # Add threads if specified (validate it is numeric)\n\
+        if [ -n "$YCSB_THREADS" ]; then\n\
+            if ! echo "$YCSB_THREADS" | grep -qE "^[0-9]+$"; then\n\
+                echo "[ERROR] YCSB_THREADS must be a non-negative integer"\n\
+                exit 1\n\
+            fi\n\
+            CMD_ARGS+=("-threads" "$YCSB_THREADS")\n\
+        fi\n\
+        \n\
+        # Add target if specified (validate it is numeric)\n\
+        if [ -n "$YCSB_TARGET" ]; then\n\
+            if ! echo "$YCSB_TARGET" | grep -qE "^[0-9]+$"; then\n\
+                echo "[ERROR] YCSB_TARGET must be a non-negative integer"\n\
+                exit 1\n\
+            fi\n\
+            CMD_ARGS+=("-target" "$YCSB_TARGET")\n\
+        fi\n\
+        \n\
+        # Log and execute the command\n\
+        echo "Running: /ycsb/bin/ycsb.sh ${CMD_ARGS[*]} $YCSB_OPTS"\n\
+        exec /ycsb/bin/ycsb.sh "${CMD_ARGS[@]}" $YCSB_OPTS\n\
+    else\n\
+        echo "YCSB Docker Container"\n\
+        echo ""\n\
+        echo "Usage: docker run [docker-options] <image> <ycsb-command> <ycsb-options>"\n\
+        echo ""\n\
+        echo "YCSB Commands:"\n\
+        echo "  load    - Load data into the database"\n\
+        echo "  run     - Run the benchmark"\n\
+        echo "  shell   - Interactive YCSB shell"\n\
+        echo ""\n\
+        echo "Environment Variables:"\n\
+        echo "  YCSB_COMMAND        - YCSB command (load, run, shell)"\n\
+        echo "  YCSB_BINDING        - Database binding (e.g., basic, redis, cassandra-cql)"\n\
+        echo "  YCSB_WORKLOAD       - Workload file path (e.g., workloads/workloada)"\n\
+        echo "  YCSB_RECORDCOUNT    - Number of records to load/use"\n\
+        echo "  YCSB_OPERATIONCOUNT - Number of operations to perform"\n\
+        echo "  YCSB_THREADS        - Number of client threads"\n\
+        echo "  YCSB_TARGET         - Target operations per second"\n\
+        echo "  YCSB_OPTS           - Additional YCSB options"\n\
+        echo ""\n\
+        echo "Example (command line):"\n\
+        echo "  docker run <image> load basic -P workloads/workloada"\n\
+        echo "  docker run <image> run basic -P workloads/workloada"\n\
+        echo ""\n\
+        echo "Example (environment variables):"\n\
+        echo "  docker run -e YCSB_COMMAND=load -e YCSB_BINDING=basic -e YCSB_WORKLOAD=workloads/workloada <image>"\n\
+        echo "  docker run -e YCSB_COMMAND=run -e YCSB_BINDING=redis -e YCSB_WORKLOAD=workloads/workloada -e YCSB_RECORDCOUNT=10000 <image>"\n\
+        echo ""\n\
+        exit 0\n\
+    fi\n\
 fi\n\
 \n\
 # Execute ycsb.sh with all passed arguments\n\

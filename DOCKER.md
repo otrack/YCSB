@@ -47,7 +47,9 @@ bin/image.sh
 
 ## Running YCSB in Docker
 
-Once you've built an image, you can run YCSB commands in the container:
+Once you've built an image, you can run YCSB commands in the container.
+
+### Using Command Line Arguments
 
 ```bash
 # Run the load phase
@@ -66,6 +68,91 @@ docker run ycsb:latest run redis \
   -P workloads/workloada \
   -p redis.host=redis-server \
   -p redis.port=6379
+```
+
+### Using Environment Variables
+
+YCSB Docker images support environment variables for convenient configuration, especially useful with Docker Compose or Kubernetes:
+
+| Environment Variable | Description | Example |
+|---------------------|-------------|---------|
+| `YCSB_COMMAND` | YCSB command (`load`, `run`, `shell`) | `load` |
+| `YCSB_BINDING` | Database binding | `basic`, `redis`, `cassandra-cql` |
+| `YCSB_WORKLOAD` | Path to workload file | `workloads/workloada` |
+| `YCSB_RECORDCOUNT` | Number of records | `10000` |
+| `YCSB_OPERATIONCOUNT` | Number of operations | `100000` |
+| `YCSB_THREADS` | Number of client threads | `4` |
+| `YCSB_TARGET` | Target operations per second | `1000` |
+| `YCSB_OPTS` | Additional YCSB options | `-p redis.host=localhost` |
+
+```bash
+# Using environment variables
+docker run \
+  -e YCSB_COMMAND=load \
+  -e YCSB_BINDING=basic \
+  -e YCSB_WORKLOAD=workloads/workloada \
+  ycsb:latest
+
+# With custom record count and threads
+docker run \
+  -e YCSB_COMMAND=run \
+  -e YCSB_BINDING=basic \
+  -e YCSB_WORKLOAD=workloads/workloada \
+  -e YCSB_RECORDCOUNT=50000 \
+  -e YCSB_OPERATIONCOUNT=100000 \
+  -e YCSB_THREADS=8 \
+  ycsb:latest
+
+# With additional options for database connection
+docker run --network=ycsb-net \
+  -e YCSB_COMMAND=load \
+  -e YCSB_BINDING=redis \
+  -e YCSB_WORKLOAD=workloads/workloada \
+  -e YCSB_OPTS="-p redis.host=redis -p redis.port=6379" \
+  ycsb:latest
+```
+
+### Docker Compose Example
+
+Environment variables make it easy to use YCSB with Docker Compose:
+
+```yaml
+version: '3.8'
+services:
+  redis:
+    image: redis:latest
+    networks:
+      - ycsb-net
+
+  ycsb-load:
+    image: ycsb:latest
+    depends_on:
+      - redis
+    environment:
+      - YCSB_COMMAND=load
+      - YCSB_BINDING=redis
+      - YCSB_WORKLOAD=workloads/workloada
+      - YCSB_RECORDCOUNT=10000
+      - YCSB_OPTS=-p redis.host=redis
+    networks:
+      - ycsb-net
+
+  ycsb-run:
+    image: ycsb:latest
+    depends_on:
+      - ycsb-load
+    environment:
+      - YCSB_COMMAND=run
+      - YCSB_BINDING=redis
+      - YCSB_WORKLOAD=workloads/workloada
+      - YCSB_OPERATIONCOUNT=100000
+      - YCSB_THREADS=4
+      - YCSB_OPTS=-p redis.host=redis
+    networks:
+      - ycsb-net
+
+networks:
+  ycsb-net:
 ```
 
 ## Networking
