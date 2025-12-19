@@ -152,9 +152,12 @@ public class CassandraCQLClient extends DB {
         readConsistencyLevel = ConsistencyLevel.valueOf(
             getProperties().getProperty(READ_CONSISTENCY_LEVEL_PROPERTY,
                 READ_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
+
         writeConsistencyLevel = ConsistencyLevel.valueOf(
             getProperties().getProperty(WRITE_CONSISTENCY_LEVEL_PROPERTY,
                 WRITE_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
+
+        logger.info("Using read/write consistency level = "+ readConsistencyLevel + " / "+ writeConsistencyLevel);
 
         Boolean useSSL = Boolean.parseBoolean(getProperties().getProperty(USE_SSL_CONNECTION,
             DEFAULT_USE_SSL_CONNECTION));
@@ -308,6 +311,7 @@ public class CassandraCQLClient extends DB {
         if (prevStmt != null) {
           stmt = prevStmt;
         }
+
       }
 
       logger.debug(stmt.getQueryString());
@@ -479,11 +483,10 @@ public class CassandraCQLClient extends DB {
         // Add key
         updateStmt.where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
         if (writeConsistencyLevel.equals(ConsistencyLevel.SERIAL)) {
-          updateStmt.onlyIf(QueryBuilder.ne(FIELD0, "test"));
+          updateStmt.onlyIf(QueryBuilder.ne(FIELD0, "test")); // serializable updates require a "conditional if"
           updateStmt.setSerialConsistencyLevel(ConsistencyLevel.SERIAL);
-        } else {
-          updateStmt.setConsistencyLevel(writeConsistencyLevel);
         }
+        updateStmt.setConsistencyLevel(writeConsistencyLevel);
 
         System.out.println(updateStmt);
 
@@ -564,9 +567,8 @@ public class CassandraCQLClient extends DB {
         if (writeConsistencyLevel.equals(ConsistencyLevel.SERIAL)) {
           insertStmt.ifNotExists();
           insertStmt.setSerialConsistencyLevel(ConsistencyLevel.SERIAL);
-        } else {
-          insertStmt.setConsistencyLevel(writeConsistencyLevel);
         }
+        insertStmt.setConsistencyLevel(writeConsistencyLevel);
 
         System.out.println(insertStmt);
 

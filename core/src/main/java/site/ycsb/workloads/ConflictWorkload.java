@@ -14,8 +14,11 @@ public class ConflictWorkload extends CoreWorkload {
 
   public static final String THETA_PROPERTY = "conflict.theta";
   public static final String THETA_DEFAULT = "0.5";
+  public static final String SHIFT_PROPERTY = "conflict.shift";
+  public static final String SHIFT_DEFAULT = "0";
 
   private double theta;
+  private long shift;
 
   private SequentialGenerator localKeyGenerator;
   private ThreadLocal<Long> clientLocalKey;
@@ -38,6 +41,16 @@ public class ConflictWorkload extends CoreWorkload {
       throw new WorkloadException("Invalid value for " + THETA_PROPERTY + ": " + theta);
     }
 
+    try {
+      shift = Integer.parseInt(p.getProperty(SHIFT_PROPERTY, String.valueOf(SHIFT_DEFAULT)));
+    } catch (NumberFormatException e) {
+      throw new WorkloadException("Invalid value for " + SHIFT_PROPERTY + ": " + shift);
+    }
+
+    if (shift > recordcount || shift < 0) {
+      throw new WorkloadException("Invalid value for " + SHIFT_PROPERTY + ": " + shift);
+    }
+
     long start = Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
     long count = Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - start)));
 
@@ -52,7 +65,7 @@ public class ConflictWorkload extends CoreWorkload {
     if (threadcount >= recordcount) {
       throw new WorkloadException("Invalid thread count" + threadcount);
     }
-    clientLocalKey.set(localKeyGenerator.nextLong());
+    clientLocalKey.set(localKeyGenerator.nextLong() + shift);
     random = ThreadLocalRandom.current();
     return null;
   }
