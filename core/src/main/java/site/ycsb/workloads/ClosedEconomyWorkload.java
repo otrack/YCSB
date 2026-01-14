@@ -603,7 +603,8 @@ public class ClosedEconomyWorkload extends Workload {
     while (second == first) {
       second = nextKeyNum();
     }
-    if (first < second) {
+    // Order keys to prevent deadlocks
+    if (first > second) {
       long temp = first;
       first = second;
       second = temp;
@@ -644,7 +645,7 @@ public class ClosedEconomyWorkload extends Workload {
         }
 
         long en = System.nanoTime();
-        measurements.measure("READ-MODIFY-WRITE", (int) (en - st) / 1000);
+        measurements.measure(operations.get("READMODIFYWRITE"), (int) (en - st) / 1000);
       } catch (NumberFormatException e) {
         return false;
       }
