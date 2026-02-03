@@ -118,9 +118,22 @@ public class ClientThread implements Runnable {
         long startTimeNanos = System.nanoTime();
 
         while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
-
-          if (!workload.doTransaction(db, workloadstate)) {
-            break;
+          
+          try {
+            db.start();
+            if (!workload.doTransaction(db, workloadstate)) {
+              db.commit();
+              break;
+            }
+            db.commit();
+          } catch (Exception e) {
+            try {
+              db.abort();
+            } catch (Exception ae) {
+              ae.printStackTrace();
+              ae.printStackTrace(System.out);
+            }
+            throw e;
           }
 
           opsdone++;
@@ -132,8 +145,21 @@ public class ClientThread implements Runnable {
 
         while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
 
-          if (!workload.doInsert(db, workloadstate)) {
-            break;
+          try {
+            db.start();
+            if (!workload.doInsert(db, workloadstate)) {
+              db.commit();
+              break;
+            }
+            db.commit();
+          } catch (Exception e) {
+            try {
+              db.abort();
+            } catch (Exception ae) {
+              ae.printStackTrace();
+              ae.printStackTrace(System.out);
+            }
+            throw e;
           }
 
           opsdone++;
