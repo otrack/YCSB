@@ -83,7 +83,8 @@ public class BasicTransactionalDB extends DB {
   @Override
   public long validate() throws DBException {
     long sum = 0;
-    synchronized (MUTEX) {
+    MUTEX.lock();
+    try {
       for (Map<String, String> record : DATA.values()) {
         for (String value : record.values()) {
           try {
@@ -93,6 +94,8 @@ public class BasicTransactionalDB extends DB {
           }
         }
       }
+    } finally {
+      MUTEX.unlock();
     }
     return sum;
   }
