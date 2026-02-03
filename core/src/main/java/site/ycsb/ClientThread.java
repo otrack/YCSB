@@ -122,7 +122,7 @@ public class ClientThread implements Runnable {
           try {
             db.start();
             if (!workload.doTransaction(db, workloadstate)) {
-              db.commit();
+              db.abort();
               break;
             }
             db.commit();
