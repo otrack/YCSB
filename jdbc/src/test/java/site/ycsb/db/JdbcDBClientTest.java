@@ -390,4 +390,65 @@ public class JdbcDBClientTest {
 
       resultSet.close();
     }
+
+    @Test
+    public void transactionCommitTest() {
+        try {
+            // Start a transaction
+            jdbcDBClient.start();
+            
+            // Insert a row within the transaction
+            String insertKey = "user_tx_commit";
+            HashMap<String, ByteIterator> insertMap = new HashMap<String, ByteIterator>();
+            for (int i = 0; i < 3; i++) {
+                insertMap.put(FIELD_PREFIX + i, new StringByteIterator(buildDeterministicValue(insertKey, FIELD_PREFIX + i)));
+            }
+            jdbcDBClient.insert(TABLE_NAME, insertKey, insertMap);
+            
+            // Commit the transaction
+            jdbcDBClient.commit();
+            
+            // Verify the row was inserted
+            ResultSet resultSet = jdbcConnection.prepareStatement(
+                String.format("SELECT * FROM %s WHERE %s = '%s'", TABLE_NAME, KEY_FIELD, insertKey)
+            ).executeQuery();
+            
+            assertTrue("Row should exist after commit", resultSet.next());
+            assertEquals(resultSet.getString(KEY_FIELD), insertKey);
+            resultSet.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("Failed transactionCommitTest: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void transactionAbortTest() {
+        try {
+            // Start a transaction
+            jdbcDBClient.start();
+            
+            // Insert a row within the transaction
+            String insertKey = "user_tx_abort";
+            HashMap<String, ByteIterator> insertMap = new HashMap<String, ByteIterator>();
+            for (int i = 0; i < 3; i++) {
+                insertMap.put(FIELD_PREFIX + i, new StringByteIterator(buildDeterministicValue(insertKey, FIELD_PREFIX + i)));
+            }
+            jdbcDBClient.insert(TABLE_NAME, insertKey, insertMap);
+            
+            // Abort the transaction
+            jdbcDBClient.abort();
+            
+            // Verify the row was NOT inserted
+            ResultSet resultSet = jdbcConnection.prepareStatement(
+                String.format("SELECT * FROM %s WHERE %s = '%s'", TABLE_NAME, KEY_FIELD, insertKey)
+            ).executeQuery();
+            
+            assertFalse("Row should not exist after abort", resultSet.next());
+            resultSet.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("Failed transactionAbortTest: " + e.getMessage());
+        }
+    }
 }

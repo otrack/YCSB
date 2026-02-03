@@ -100,6 +100,9 @@ public class JdbcDBClient extends DB {
   /** DB flavor defines DB-specific syntax and behavior for the
    * particular database. Current database flavors are: {default, phoenix} */
   private DBFlavor dbFlavor;
+  
+  /** Track whether we're currently in a transaction. */
+  private boolean inTransaction = false;
 
   /**
    * Ordered field information for insert and update statements.
@@ -275,6 +278,70 @@ public class JdbcDBClient extends DB {
     } catch (SQLException e) {
       System.err.println("Error in closing the connection. " + e);
       throw new DBException(e);
+    }
+  }
+
+  /**
+   * Start a database transaction.
+   */
+  @Override
+  public void start() throws DBException {
+    try {
+      // If autoCommit was originally true, we need to disable it for the transaction
+      if (autoCommit && !inTransaction) {
+        for (Connection conn : conns) {
+          conn.setAutoCommit(false);
+        }
+      }
+      inTransaction = true;
+    } catch (SQLException e) {
+      throw new DBException("Error starting transaction: " + e);
+    }
+  }
+
+  /**
+   * Commit the current database transaction.
+   */
+  @Override
+  public void commit() throws DBException {
+    try {
+      if (inTransaction) {
+        for (Connection conn : conns) {
+          conn.commit();
+        }
+        // Restore autoCommit if it was originally enabled
+        if (autoCommit) {
+          for (Connection conn : conns) {
+            conn.setAutoCommit(true);
+          }
+        }
+        inTransaction = false;
+      }
+    } catch (SQLException e) {
+      throw new DBException("Error committing transaction: " + e);
+    }
+  }
+
+  /**
+   * Abort the current database transaction.
+   */
+  @Override
+  public void abort() throws DBException {
+    try {
+      if (inTransaction) {
+        for (Connection conn : conns) {
+          conn.rollback();
+        }
+        // Restore autoCommit if it was originally enabled
+        if (autoCommit) {
+          for (Connection conn : conns) {
+            conn.setAutoCommit(true);
+          }
+        }
+        inTransaction = false;
+      }
+    } catch (SQLException e) {
+      throw new DBException("Error aborting transaction: " + e);
     }
   }
 

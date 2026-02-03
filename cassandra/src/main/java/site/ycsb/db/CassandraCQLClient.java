@@ -262,6 +262,54 @@ public class CassandraCQLClient extends DB {
   }
 
   /**
+   * Start a database transaction.
+   * Uses Cassandra 5's transaction support via BEGIN TRANSACTION statement.
+   */
+  @Override
+  public void start() throws DBException {
+    try {
+      session.execute("BEGIN TRANSACTION");
+      if (debug) {
+        logger.debug("Started transaction");
+      }
+    } catch (Exception e) {
+      throw new DBException("Error starting transaction: " + e);
+    }
+  }
+
+  /**
+   * Commit the current database transaction.
+   * Uses Cassandra 5's transaction support via COMMIT TRANSACTION statement.
+   */
+  @Override
+  public void commit() throws DBException {
+    try {
+      session.execute("COMMIT TRANSACTION");
+      if (debug) {
+        logger.debug("Committed transaction");
+      }
+    } catch (Exception e) {
+      throw new DBException("Error committing transaction: " + e);
+    }
+  }
+
+  /**
+   * Abort the current database transaction.
+   * Uses Cassandra 5's transaction support via ABORT TRANSACTION statement.
+   */
+  @Override
+  public void abort() throws DBException {
+    try {
+      session.execute("ABORT TRANSACTION");
+      if (debug) {
+        logger.debug("Aborted transaction");
+      }
+    } catch (Exception e) {
+      throw new DBException("Error aborting transaction: " + e);
+    }
+  }
+
+  /**
    * Read a record from the database. Each field/value pair from the result will
    * be stored in a HashMap.
    *

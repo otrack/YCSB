@@ -71,6 +71,36 @@ public abstract class DB {
   }
 
   /**
+   * Start a database transaction.
+   * This is called before a transaction begins.
+   */
+  public void start() throws DBException {
+  }
+
+  /**
+   * Commit the current database transaction.
+   */
+  public void commit() throws DBException {
+  }
+
+  /**
+   * Abort the current database transaction.
+   */
+  public void abort() throws DBException {
+  }
+
+  /**
+   * Validate the current database transaction.
+   * This method is used by workloads that need to validate consistency,
+   * such as the ClosedEconomyWorkload which checks that the total sum of values remains constant.
+   *
+   * @return The sum of all values in the database, or -1 if validation is not supported.
+   */
+  public long validate() throws DBException {
+    return -1;
+  }
+
+  /**
    * Cleanup any state for this DB.
    * Called once per DB instance; there is one DB instance per client thread.
    */
