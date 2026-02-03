@@ -34,7 +34,6 @@ public class TestClosedEconomyWorkload {
     final Properties p = new Properties();
     p.setProperty(Client.RECORD_COUNT_PROPERTY, "1000");
     p.setProperty(Client.OPERATION_COUNT_PROPERTY, "1000");
-    p.setProperty(ClosedEconomyWorkload.TOTAL_CASH_PROPERTY, "1000000");
     p.setProperty(ClosedEconomyWorkload.READ_PROPORTION_PROPERTY, "0.5");
     p.setProperty(ClosedEconomyWorkload.READMODIFYWRITE_PROPORTION_PROPERTY, "0.5");
 
@@ -42,23 +41,6 @@ public class TestClosedEconomyWorkload {
     final ClosedEconomyWorkload workload = new ClosedEconomyWorkload();
     workload.init(p);
 
-    assertNotNull(workload);
-  }
-
-  @Test
-  public void testInitWithIncompatibleTotalCash() throws WorkloadException {
-    final Properties p = new Properties();
-    p.setProperty(Client.RECORD_COUNT_PROPERTY, "1000");
-    p.setProperty(Client.OPERATION_COUNT_PROPERTY, "1000");
-    p.setProperty(ClosedEconomyWorkload.TOTAL_CASH_PROPERTY, "999"); // Not divisible by 1000
-    p.setProperty(ClosedEconomyWorkload.READ_PROPORTION_PROPERTY, "0.5");
-    p.setProperty(ClosedEconomyWorkload.READMODIFYWRITE_PROPORTION_PROPERTY, "0.5");
-
-    Measurements.setProperties(p);
-    final ClosedEconomyWorkload workload = new ClosedEconomyWorkload();
-    workload.init(p);
-
-    // Should still initialize, but with adjusted values
     assertNotNull(workload);
   }
 
@@ -67,7 +49,6 @@ public class TestClosedEconomyWorkload {
     final Properties p = new Properties();
     p.setProperty(Client.RECORD_COUNT_PROPERTY, "1000");
     p.setProperty(Client.OPERATION_COUNT_PROPERTY, "1000");
-    p.setProperty(ClosedEconomyWorkload.TOTAL_CASH_PROPERTY, "1000000");
 
     Measurements.setProperties(p);
     final ClosedEconomyWorkload workload = new ClosedEconomyWorkload();
@@ -82,7 +63,6 @@ public class TestClosedEconomyWorkload {
     final Properties p = new Properties();
     p.setProperty(Client.RECORD_COUNT_PROPERTY, "1000");
     p.setProperty(Client.OPERATION_COUNT_PROPERTY, "1000");
-    p.setProperty(ClosedEconomyWorkload.TOTAL_CASH_PROPERTY, "1000000");
 
     Measurements.setProperties(p);
     final ClosedEconomyWorkload workload = new ClosedEconomyWorkload();
@@ -91,7 +71,7 @@ public class TestClosedEconomyWorkload {
     java.util.HashMap<String, site.ycsb.ByteIterator> values = workload.buildValues();
     assertNotNull(values);
     assertTrue(values.containsKey(ClosedEconomyWorkload.DEFAULT_FIELD_NAME));
-    assertEquals(values.get(ClosedEconomyWorkload.DEFAULT_FIELD_NAME).toString(), "1000");
+    assertEquals(values.get(ClosedEconomyWorkload.DEFAULT_FIELD_NAME).toString(), "0");
   }
 
   @Test
@@ -104,11 +84,9 @@ public class TestClosedEconomyWorkload {
     final int recordCount = 1000;
     final int opsPerClient = 100000;
     final int numClients = 4;
-    final long totalCash = 1000000;
     
     p.setProperty(Client.RECORD_COUNT_PROPERTY, String.valueOf(recordCount));
     p.setProperty(Client.OPERATION_COUNT_PROPERTY, String.valueOf(opsPerClient * numClients));
-    p.setProperty(ClosedEconomyWorkload.TOTAL_CASH_PROPERTY, String.valueOf(totalCash));
     p.setProperty(ClosedEconomyWorkload.READ_PROPORTION_PROPERTY, "0.0");
     p.setProperty(ClosedEconomyWorkload.UPDATE_PROPORTION_PROPERTY, "0.0");
     p.setProperty(ClosedEconomyWorkload.INSERT_PROPORTION_PROPERTY, "0.0");
@@ -132,7 +110,7 @@ public class TestClosedEconomyWorkload {
     }
     loadDB.cleanup();
     
-    // Verify initial sum
+    // Verify initial sum is 0 (all accounts start with 0 balance)
     BasicTransactionalDB validateDB = new BasicTransactionalDB();
     validateDB.setProperties(p);
     validateDB.init();
@@ -140,7 +118,7 @@ public class TestClosedEconomyWorkload {
     validateDB.cleanup();
     
     System.out.println("Initial sum: " + initialSum);
-    assertEquals(initialSum, totalCash, "Initial sum should equal total cash");
+    assertEquals(initialSum, 0L, "Initial sum should be 0 (all accounts start with 0 balance)");
     
     // Run workload with multiple clients
     System.out.println("Running workload with " + numClients + " clients...");
@@ -177,7 +155,7 @@ public class TestClosedEconomyWorkload {
     
     System.out.println("Workload complete. Validating final sum...");
     
-    // Validate final sum
+    // Validate final sum is still 0 (closed economy property)
     BasicTransactionalDB finalValidateDB = new BasicTransactionalDB();
     finalValidateDB.setProperties(p);
     finalValidateDB.init();
@@ -185,7 +163,7 @@ public class TestClosedEconomyWorkload {
     finalValidateDB.cleanup();
     
     System.out.println("Final sum: " + finalSum);
-    assertEquals(finalSum, totalCash, "Final sum should equal initial total cash (closed economy property)");
+    assertEquals(finalSum, 0L, "Final sum should be 0 (closed economy property maintains sum)");
     
     // Clear data for next test
     BasicTransactionalDB.clearData();

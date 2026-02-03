@@ -44,7 +44,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <li><b>table</b>: the name of the database table (default: usertable)
  * <li><b>fieldcount</b>: the number of fields in a record (default: 10)
  * <li><b>fieldlength</b>: the size of each field (default: 100)
- * <li><b>totalcash</b>: the total amount of money in the economy (default: 1000000)
  * <li><b>readproportion</b>: proportion of read transactions (default: 0.95)
  * <li><b>updateproportion</b>: proportion of update transactions (default: 0.05)
  * <li><b>insertproportion</b>: proportion of insert transactions (default: 0)
@@ -57,6 +56,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <li><b>insertorder</b>: order for inserting records - ordered or hashed (default: hashed)
  * <li><b>validatebyquery</b>: whether to validate by query or by read operations (default: true)
  * </ul>
+ * 
+ * <p>Note: All accounts start with an initial balance of 0. The closed economy property
+ * ensures that the total sum across all accounts remains 0 after all transactions.
  */
 public class ClosedEconomyWorkload extends Workload {
 
@@ -99,16 +101,6 @@ public class ClosedEconomyWorkload extends Workload {
    * The default maximum length of a field in bytes.
    */
   public static final String FIELD_LENGTH_PROPERTY_DEFAULT = "100";
-
-  /**
-   * The name of the property for the total amount of money in the economy at the start.
-   */
-  public static final String TOTAL_CASH_PROPERTY = "totalcash";
-
-  /**
-   * The default total amount of money in the economy at the start.
-   */
-  public static final String TOTAL_CASH_PROPERTY_DEFAULT = "1000000";
 
   /**
    * The name of a property that specifies the filename containing the field length histogram.
@@ -280,8 +272,6 @@ public class ClosedEconomyWorkload extends Workload {
    */
   public static final String DEFAULT_FIELD_NAME = "field0";
 
-  private static final long INITIAL_VALUE_DEFAULT = 1L;
-
   protected String table;
   protected long fieldCount;
   protected NumberGenerator fieldLengthGenerator;
@@ -299,8 +289,6 @@ public class ClosedEconomyWorkload extends Workload {
   protected long opCount;
   protected AtomicInteger actualOpCount = new AtomicInteger(0);
   protected Measurements measurements;
-  protected long totalCash;
-  protected long initialValue;
   protected boolean validateByQuery;
 
   private final Hashtable<String, String> operations = new Hashtable<String, String>() {
@@ -318,17 +306,14 @@ public class ClosedEconomyWorkload extends Workload {
     String fieldLengthDistribution = p.getProperty(
         FIELD_LENGTH_DISTRIBUTION_PROPERTY, FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT);
 
-    int numRecords = Integer.parseInt(p.getProperty(Client.RECORD_COUNT_PROPERTY));
-    int totalCash = Integer.parseInt(p.getProperty(TOTAL_CASH_PROPERTY, TOTAL_CASH_PROPERTY_DEFAULT));
-
     long fieldLength = Long.parseLong(p.getProperty(FIELD_LENGTH_PROPERTY, FIELD_LENGTH_PROPERTY_DEFAULT));
     String fieldLengthHistogram = p.getProperty(
         FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY, FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY_DEFAULT);
 
     if (fieldLengthDistribution.compareTo("constant") == 0) {
-      fieldLengthGenerator = new ConstantIntegerGenerator(totalCash / numRecords);
+      fieldLengthGenerator = new ConstantIntegerGenerator((int) fieldLength);
     } else if (fieldLengthDistribution.compareTo("uniform") == 0) {
-      fieldLengthGenerator = new UniformLongGenerator(1, totalCash / numRecords);
+      fieldLengthGenerator = new UniformLongGenerator(1, fieldLength);
     } else if (fieldLengthDistribution.compareTo("zipfian") == 0) {
       fieldLengthGenerator = new ZipfianGenerator(1, fieldLength);
     } else if (fieldLengthDistribution.compareTo("histogram") == 0) {
@@ -367,16 +352,6 @@ public class ClosedEconomyWorkload extends Workload {
         p.getProperty(READMODIFYWRITE_PROPORTION_PROPERTY, READMODIFYWRITE_PROPORTION_PROPERTY_DEFAULT));
 
     recordCount = Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY));
-    totalCash = Long.parseLong(p.getProperty(TOTAL_CASH_PROPERTY, TOTAL_CASH_PROPERTY_DEFAULT));
-
-    if (totalCash > 0 && totalCash % recordCount == 0) {
-      initialValue = totalCash / recordCount;
-    } else {
-      System.err.println("Incompatible total cash value and record count. " +
-          "Setting total cash value to record count, and cash values for each entry to 1.");
-      totalCash = recordCount;
-      initialValue = INITIAL_VALUE_DEFAULT;
-    }
 
     String requestDistrib = p.getProperty(
         REQUEST_DISTRIBUTION_PROPERTY, REQUEST_DISTRIBUTION_PROPERTY_DEFAULT);
@@ -478,7 +453,6 @@ public class ClosedEconomyWorkload extends Workload {
     System.out.println("[CONFIG] READMODIFYWRITE_Proportion: " + readModifyWriteProportion);
     System.out.println("[CONFIG] Request_Distribution: " + requestDistrib);
     System.out.println("[CONFIG] Record_Count: " + recordCount);
-    System.out.println("[CONFIG] Total_Cash: " + totalCash);
   }
 
   /**
@@ -490,11 +464,12 @@ public class ClosedEconomyWorkload extends Workload {
 
   /**
    * Build the initial values for a record.
+   * All accounts start with an initial balance of 0.
    */
   protected HashMap<String, ByteIterator> buildValues() {
     HashMap<String, ByteIterator> values = new HashMap<>();
     String fieldKey = DEFAULT_FIELD_NAME;
-    ByteIterator data = new StringByteIterator("" + initialValue);
+    ByteIterator data = new StringByteIterator("0");
     values.put(fieldKey, data);
     return values;
   }
@@ -751,14 +726,16 @@ public class ClosedEconomyWorkload extends Workload {
     }
 
     long count = actualOpCount.intValue();
-    double anomalyScore = Math.abs((totalCash - countedSum) / (1.0 * count));
+    // In a closed economy starting with all 0 balances, the sum should always be 0
+    final long expectedSum = 0;
+    double anomalyScore = Math.abs((expectedSum - countedSum) / (1.0 * Math.max(count, 1)));
 
-    if (countedSum != totalCash) {
-      printValidationMessages(System.err, "FAILED", totalCash, countedSum, count, anomalyScore);
-      printValidationMessages(System.out, "FAILED", totalCash, countedSum, count, anomalyScore);
+    if (countedSum != expectedSum) {
+      printValidationMessages(System.err, "FAILED", expectedSum, countedSum, count, anomalyScore);
+      printValidationMessages(System.out, "FAILED", expectedSum, countedSum, count, anomalyScore);
       return false;
     } else {
-      printValidationMessages(System.out, "SUCCESS", totalCash, countedSum, count, anomalyScore);
+      printValidationMessages(System.out, "SUCCESS", expectedSum, countedSum, count, anomalyScore);
       return true;
     }
   }
@@ -766,11 +743,11 @@ public class ClosedEconomyWorkload extends Workload {
   /**
    * Print validation messages.
    */
-  private static void printValidationMessages(PrintStream stream, String status, long totalCash,
+  private static void printValidationMessages(PrintStream stream, String status, long expectedSum,
                                               long countedSum, long count, double anomalyScore) {
     stream.println("[VALIDATE] STATUS: " + status);
-    stream.println("[VALIDATE] TOTAL CASH: " + totalCash);
-    stream.println("[VALIDATE] COUNTED CASH: " + countedSum);
+    stream.println("[VALIDATE] EXPECTED SUM: " + expectedSum);
+    stream.println("[VALIDATE] COUNTED SUM: " + countedSum);
     stream.println("[VALIDATE] ACTUAL OPERATIONS: " + count);
     stream.println("[VALIDATE] ANOMALY SCORE: " + anomalyScore);
   }

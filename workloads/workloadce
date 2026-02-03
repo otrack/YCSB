@@ -20,14 +20,11 @@
 #   Read/update/read-modify-write ratio: 0/0/100
 #   Default data size: Single field per record containing a numeric value
 #   Request distribution: uniform
-#   Validation: Total cash should remain constant across all accounts
+#   Validation: Total sum should remain 0 across all accounts (all start at 0)
 
 recordcount=1000
 operationcount=1000
 workload=site.ycsb.workloads.ClosedEconomyWorkload
-
-# Total cash in the economy (will be distributed equally across records)
-totalcash=1000000
 
 # Transaction proportions
 readproportion=0
