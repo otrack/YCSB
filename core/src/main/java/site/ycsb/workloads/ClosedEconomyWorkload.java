@@ -606,10 +606,8 @@ public class ClosedEconomyWorkload extends Workload {
         long firstAmount = Long.parseLong(firstValues.get(DEFAULT_FIELD_NAME).toString());
         long secondAmount = Long.parseLong(secondValues.get(DEFAULT_FIELD_NAME).toString());
 
-        if (firstAmount > 0) {
-          firstAmount--;
-          secondAmount++;
-        }
+        firstAmount--;
+        secondAmount++;
 
         firstValues.put(DEFAULT_FIELD_NAME, new StringByteIterator(Long.toString(firstAmount)));
         secondValues.put(DEFAULT_FIELD_NAME, new StringByteIterator(Long.toString(secondAmount)));
