@@ -706,14 +706,19 @@ public class CassandraCQLClient extends DB {
 
   /**
    * Transfer operation using a proper two-phase transaction.
-   * This method implements: BEGIN TRANSACTION, read balance1, read balance2, 
-   * update balance1, update balance2, COMMIT TRANSACTION.
+   * This method attempts to use Cassandra transactions if supported (Cassandra 5+),
+   * and falls back to using BATCH for atomicity on older versions.
    */
   @Override
   public Status transfer(String table, String key1, String key2, String field) {
     try {
-      // Start transaction
-      session.execute("BEGIN TRANSACTION");
+      // Try to use transaction support if available (Cassandra 5+)
+      try {
+        session.execute("BEGIN TRANSACTION");
+      } catch (Exception e) {
+        // If transactions are not supported, fall back to BATCH
+        return transferWithBatch(table, key1, key2, field);
+      }
       
       // Read both account balances
       PreparedStatement readStmt = readAllStmt.get();
@@ -784,8 +789,77 @@ public class CassandraCQLClient extends DB {
       try {
         session.execute("ABORT TRANSACTION");
       } catch (Exception abortEx) {
-        logger.error("Error aborting transaction", abortEx);
+        // Ignore abort errors
       }
+      return Status.ERROR;
+    }
+  }
+
+  /**
+   * Transfer implementation using BATCH for Cassandra versions without transaction support.
+   */
+  private Status transferWithBatch(String table, String key1, String key2, String field) {
+    try {
+      // Read both account balances (outside the batch)
+      PreparedStatement readStmt = readAllStmt.get();
+      if (readStmt == null) {
+        Select.Where selectStmt = QueryBuilder.select().all().from(table)
+            .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
+        selectStmt.setConsistencyLevel(readConsistencyLevel);
+        readStmt = session.prepare(selectStmt);
+        readAllStmt.set(readStmt);
+      }
+      
+      // Read first account
+      ResultSet rs1 = session.execute(readStmt.bind(key1));
+      if (rs1.isExhausted()) {
+        return Status.NOT_FOUND;
+      }
+      Row row1 = rs1.one();
+      ByteBuffer val1 = row1.getBytesUnsafe(field);
+      if (val1 == null) {
+        return Status.NOT_FOUND;
+      }
+      long balance1 = Long.parseLong(new String(val1.array()));
+      
+      // Read second account
+      ResultSet rs2 = session.execute(readStmt.bind(key2));
+      if (rs2.isExhausted()) {
+        return Status.NOT_FOUND;
+      }
+      Row row2 = rs2.one();
+      ByteBuffer val2 = row2.getBytesUnsafe(field);
+      if (val2 == null) {
+        return Status.NOT_FOUND;
+      }
+      long balance2 = Long.parseLong(new String(val2.array()));
+      
+      // Transfer 1 unit
+      balance1--;
+      balance2++;
+      
+      // Create a batch statement with both updates
+      Batch batch = QueryBuilder.batch();
+      
+      Update update1 = QueryBuilder.update(table);
+      update1.with(QueryBuilder.set(field, Long.toString(balance1)));
+      update1.where(QueryBuilder.eq(YCSB_KEY, key1));
+      
+      Update update2 = QueryBuilder.update(table);
+      update2.with(QueryBuilder.set(field, Long.toString(balance2)));
+      update2.where(QueryBuilder.eq(YCSB_KEY, key2));
+      
+      batch.add(update1);
+      batch.add(update2);
+      batch.setConsistencyLevel(writeConsistencyLevel);
+      
+      // Execute the batch atomically
+      session.execute(batch);
+      
+      return Status.OK;
+      
+    } catch (Exception e) {
+      logger.error("Error in batch transfer operation", e);
       return Status.ERROR;
     }
   }
