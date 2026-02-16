@@ -666,7 +666,7 @@ public class JdbcDBClient extends DB {
       updateStmt.setString(2, key1);
       int result1 = updateStmt.executeUpdate();
       
-      // Execute second update (reuse statement, JDBC drivers should handle parameter rebinding)
+      // Execute second update (PreparedStatement parameters are rebound by setString calls)
       updateStmt.setString(1, Long.toString(balance2));
       updateStmt.setString(2, key2);
       int result2 = updateStmt.executeUpdate();
