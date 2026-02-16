@@ -583,6 +583,105 @@ public class JdbcDBClient extends DB {
     }
   }
 
+  /**
+   * Transfer operation using a proper two-phase transaction.
+   * This method implements: BEGIN, read balance1, read balance2, update balance1, update balance2, COMMIT.
+   */
+  @Override
+  public Status transfer(String tableName, String key1, String key2, String field) {
+    Connection conn = null;
+    boolean wasAutoCommit = autoCommit;
+    try {
+      // Use the connection for key1 (could be improved to handle cross-shard transfers)
+      conn = getShardConnectionByKey(key1);
+      
+      // Start transaction if not already in one
+      if (!inTransaction) {
+        conn.setAutoCommit(false);
+      }
+      
+      // Read both account balances
+      StatementType readType = new StatementType(StatementType.Type.READ, tableName, 1, "", getShardIndexByKey(key1));
+      PreparedStatement readStmt = cachedStatements.get(readType);
+      if (readStmt == null) {
+        readStmt = createAndCacheReadStatement(readType, key1);
+      }
+      
+      readStmt.setString(1, key1);
+      ResultSet rs1 = readStmt.executeQuery();
+      if (!rs1.next()) {
+        rs1.close();
+        if (!inTransaction && !wasAutoCommit) {
+          conn.rollback();
+          conn.setAutoCommit(wasAutoCommit);
+        }
+        return Status.NOT_FOUND;
+      }
+      long balance1 = Long.parseLong(rs1.getString(field));
+      rs1.close();
+      
+      readStmt.setString(1, key2);
+      ResultSet rs2 = readStmt.executeQuery();
+      if (!rs2.next()) {
+        rs2.close();
+        if (!inTransaction && !wasAutoCommit) {
+          conn.rollback();
+          conn.setAutoCommit(wasAutoCommit);
+        }
+        return Status.NOT_FOUND;
+      }
+      long balance2 = Long.parseLong(rs2.getString(field));
+      rs2.close();
+      
+      // Transfer 1 unit
+      balance1--;
+      balance2++;
+      
+      // Update both accounts
+      Map<String, ByteIterator> update1 = new HashMap<>();
+      update1.put(field, new StringByteIterator(Long.toString(balance1)));
+      OrderedFieldInfo fieldInfo1 = getFieldInfo(update1);
+      
+      StatementType updateType = new StatementType(StatementType.Type.UPDATE, tableName,
+          1, fieldInfo1.getFieldKeys(), getShardIndexByKey(key1));
+      PreparedStatement updateStmt = cachedStatements.get(updateType);
+      if (updateStmt == null) {
+        updateStmt = createAndCacheUpdateStatement(updateType, key1);
+      }
+      
+      updateStmt.setString(1, Long.toString(balance1));
+      updateStmt.setString(2, key1);
+      int result1 = updateStmt.executeUpdate();
+      
+      updateStmt.setString(1, Long.toString(balance2));
+      updateStmt.setString(2, key2);
+      int result2 = updateStmt.executeUpdate();
+      
+      // Commit if we started the transaction
+      if (!inTransaction) {
+        conn.commit();
+        conn.setAutoCommit(wasAutoCommit);
+      }
+      
+      if (result1 == 1 && result2 == 1) {
+        return Status.OK;
+      }
+      return Status.UNEXPECTED_STATE;
+      
+    } catch (SQLException | NumberFormatException e) {
+      System.err.println("Error in processing transfer on table: " + tableName + " - " + e);
+      try {
+        if (conn != null && !inTransaction) {
+          conn.rollback();
+          conn.setAutoCommit(wasAutoCommit);
+        }
+      } catch (SQLException ex) {
+        System.err.println("Error rolling back transfer: " + ex);
+      }
+      return Status.ERROR;
+    }
+  }
+
   private OrderedFieldInfo getFieldInfo(Map<String, ByteIterator> values) {
     String fieldKeys = "";
     List<String> fieldValues = new ArrayList<>();

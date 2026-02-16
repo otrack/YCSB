@@ -704,4 +704,90 @@ public class CassandraCQLClient extends DB {
     return Status.ERROR;
   }
 
+  /**
+   * Transfer operation using a proper two-phase transaction.
+   * This method implements: BEGIN TRANSACTION, read balance1, read balance2, 
+   * update balance1, update balance2, COMMIT TRANSACTION.
+   */
+  @Override
+  public Status transfer(String table, String key1, String key2, String field) {
+    try {
+      // Start transaction
+      session.execute("BEGIN TRANSACTION");
+      
+      // Read both account balances
+      PreparedStatement readStmt = readAllStmt.get();
+      if (readStmt == null) {
+        Select.Where selectStmt = QueryBuilder.select().all().from(table)
+            .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
+        selectStmt.setConsistencyLevel(readConsistencyLevel);
+        readStmt = session.prepare(selectStmt);
+        readAllStmt.set(readStmt);
+      }
+      
+      // Read first account
+      ResultSet rs1 = session.execute(readStmt.bind(key1));
+      if (rs1.isExhausted()) {
+        session.execute("ABORT TRANSACTION");
+        return Status.NOT_FOUND;
+      }
+      Row row1 = rs1.one();
+      ByteBuffer val1 = row1.getBytesUnsafe(field);
+      if (val1 == null) {
+        session.execute("ABORT TRANSACTION");
+        return Status.NOT_FOUND;
+      }
+      long balance1 = Long.parseLong(new String(val1.array()));
+      
+      // Read second account
+      ResultSet rs2 = session.execute(readStmt.bind(key2));
+      if (rs2.isExhausted()) {
+        session.execute("ABORT TRANSACTION");
+        return Status.NOT_FOUND;
+      }
+      Row row2 = rs2.one();
+      ByteBuffer val2 = row2.getBytesUnsafe(field);
+      if (val2 == null) {
+        session.execute("ABORT TRANSACTION");
+        return Status.NOT_FOUND;
+      }
+      long balance2 = Long.parseLong(new String(val2.array()));
+      
+      // Transfer 1 unit
+      balance1--;
+      balance2++;
+      
+      // Prepare update statement
+      Set<String> fields = new HashSet<>();
+      fields.add(field);
+      PreparedStatement updateStmt = updateStmts.get(fields);
+      if (updateStmt == null) {
+        Update update = QueryBuilder.update(table);
+        update.with(QueryBuilder.set(field, QueryBuilder.bindMarker()));
+        update.where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
+        update.setConsistencyLevel(writeConsistencyLevel);
+        updateStmt = session.prepare(update);
+        updateStmts.putIfAbsent(new HashSet<>(fields), updateStmt);
+      }
+      
+      // Update both accounts
+      session.execute(updateStmt.bind(Long.toString(balance1), key1));
+      session.execute(updateStmt.bind(Long.toString(balance2), key2));
+      
+      // Commit transaction
+      session.execute("COMMIT TRANSACTION");
+      
+      return Status.OK;
+      
+    } catch (Exception e) {
+      logger.error("Error in transfer operation", e);
+      try {
+        session.execute("ABORT TRANSACTION");
+      } catch (Exception abortEx) {
+        logger.error("Error aborting transaction", abortEx);
+      }
+      return Status.ERROR;
+    }
+  }
+
 }

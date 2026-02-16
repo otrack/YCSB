@@ -101,6 +101,68 @@ public abstract class DB {
   }
 
   /**
+   * Transfer operation for the closed economy workload.
+   * This method implements a transfer of value from one account to another.
+   * The default implementation uses an interactive approach with separate read and update operations.
+   * Database implementations that support transactions should override this method to use
+   * a proper two-phase transaction (BEGIN, reads, updates, COMMIT).
+   *
+   * @param table The name of the table
+   * @param key1 The key of the first account (source)
+   * @param key2 The key of the second account (destination)
+   * @param field The field name containing the balance
+   * @return The result of the operation.
+   */
+  public Status transfer(String table, String key1, String key2, String field) {
+    // Default interactive implementation
+    HashMap<String, ByteIterator> result1 = new HashMap<>();
+    HashMap<String, ByteIterator> result2 = new HashMap<>();
+    
+    Set<String> fields = new java.util.HashSet<>();
+    fields.add(field);
+    
+    // Read both accounts
+    Status status = read(table, key1, fields, result1);
+    if (!status.isOk()) {
+      return status;
+    }
+    
+    status = read(table, key2, fields, result2);
+    if (!status.isOk()) {
+      return status;
+    }
+    
+    try {
+      // Parse balances
+      long balance1 = Long.parseLong(result1.get(field).toString());
+      long balance2 = Long.parseLong(result2.get(field).toString());
+      
+      // Transfer 1 unit from account 1 to account 2
+      balance1--;
+      balance2++;
+      
+      // Create update values
+      HashMap<String, ByteIterator> update1 = new HashMap<>();
+      update1.put(field, new StringByteIterator(Long.toString(balance1)));
+      
+      HashMap<String, ByteIterator> update2 = new HashMap<>();
+      update2.put(field, new StringByteIterator(Long.toString(balance2)));
+      
+      // Update both accounts
+      status = update(table, key1, update1);
+      if (!status.isOk()) {
+        return status;
+      }
+      
+      status = update(table, key2, update2);
+      return status;
+      
+    } catch (NumberFormatException e) {
+      return Status.ERROR;
+    }
+  }
+
+  /**
    * Cleanup any state for this DB.
    * Called once per DB instance; there is one DB instance per client thread.
    */

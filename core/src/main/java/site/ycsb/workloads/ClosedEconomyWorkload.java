@@ -588,43 +588,7 @@ public class ClosedEconomyWorkload extends Workload {
     String firstKey = buildKeyName(first);
     String secondKey = buildKeyName(second);
 
-    HashSet<String> fields = new HashSet<>();
-    if (!readAllFields) {
-      String fieldName = "field" + fieldChooser.nextString();
-      fields.add(fieldName);
-    } else {
-      fields.add(DEFAULT_FIELD_NAME);
-    }
-
-    HashMap<String, ByteIterator> firstValues = new HashMap<>();
-    HashMap<String, ByteIterator> secondValues = new HashMap<>();
-
-    long st = System.nanoTime();
-    if (db.read(table, firstKey, fields, firstValues).isOk() &&
-        db.read(table, secondKey, fields, secondValues).isOk()) {
-      try {
-        long firstAmount = Long.parseLong(firstValues.get(DEFAULT_FIELD_NAME).toString());
-        long secondAmount = Long.parseLong(secondValues.get(DEFAULT_FIELD_NAME).toString());
-
-        firstAmount--;
-        secondAmount++;
-
-        firstValues.put(DEFAULT_FIELD_NAME, new StringByteIterator(Long.toString(firstAmount)));
-        secondValues.put(DEFAULT_FIELD_NAME, new StringByteIterator(Long.toString(secondAmount)));
-
-        if (!db.update(table, firstKey, firstValues).isOk() ||
-            !db.update(table, secondKey, secondValues).isOk()) {
-          return false;
-        }
-
-        long en = System.nanoTime();
-        measurements.measure(operations.get("READMODIFYWRITE"), (int) (en - st) / 1000);
-      } catch (NumberFormatException e) {
-        return false;
-      }
-      return true;
-    }
-    return false;
+    return db.transfer(table, firstKey, secondKey, DEFAULT_FIELD_NAME).isOk();
   }
 
   /**
