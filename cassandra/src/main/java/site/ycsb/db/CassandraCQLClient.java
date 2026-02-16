@@ -742,7 +742,7 @@ public class CassandraCQLClient extends DB {
         session.execute("ABORT TRANSACTION");
         return Status.NOT_FOUND;
       }
-      long balance1 = Long.parseLong(new String(val1.array()));
+      long balance1 = Long.parseLong(getStringFromByteBuffer(val1));
       
       // Read second account
       ResultSet rs2 = session.execute(readStmt.bind(key2));
@@ -756,7 +756,7 @@ public class CassandraCQLClient extends DB {
         session.execute("ABORT TRANSACTION");
         return Status.NOT_FOUND;
       }
-      long balance2 = Long.parseLong(new String(val2.array()));
+      long balance2 = Long.parseLong(getStringFromByteBuffer(val2));
       
       // Transfer 1 unit
       balance1--;
@@ -820,7 +820,7 @@ public class CassandraCQLClient extends DB {
       if (val1 == null) {
         return Status.NOT_FOUND;
       }
-      long balance1 = Long.parseLong(new String(val1.array()));
+      long balance1 = Long.parseLong(getStringFromByteBuffer(val1));
       
       // Read second account
       ResultSet rs2 = session.execute(readStmt.bind(key2));
@@ -832,7 +832,7 @@ public class CassandraCQLClient extends DB {
       if (val2 == null) {
         return Status.NOT_FOUND;
       }
-      long balance2 = Long.parseLong(new String(val2.array()));
+      long balance2 = Long.parseLong(getStringFromByteBuffer(val2));
       
       // Transfer 1 unit
       balance1--;
@@ -862,6 +862,25 @@ public class CassandraCQLClient extends DB {
       logger.error("Error in batch transfer operation", e);
       return Status.ERROR;
     }
+  }
+
+  /**
+   * Safely convert a ByteBuffer to a String.
+   * Handles cases where the buffer's position is not at zero or it's read-only.
+   */
+  private String getStringFromByteBuffer(ByteBuffer buffer) {
+    if (buffer == null) {
+      return null;
+    }
+    byte[] bytes;
+    if (buffer.hasArray()) {
+      bytes = new byte[buffer.remaining()];
+      buffer.duplicate().get(bytes);
+    } else {
+      bytes = new byte[buffer.remaining()];
+      buffer.duplicate().get(bytes);
+    }
+    return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
   }
 
 }
