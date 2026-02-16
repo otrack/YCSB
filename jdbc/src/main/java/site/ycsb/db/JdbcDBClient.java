@@ -586,13 +586,24 @@ public class JdbcDBClient extends DB {
   /**
    * Transfer operation using a proper two-phase transaction.
    * This method implements: BEGIN, read balance1, read balance2, update balance1, update balance2, COMMIT.
+   * Note: This implementation only supports transfers within the same shard. For cross-shard transfers,
+   * it falls back to the default interactive implementation in the base DB class.
    */
   @Override
   public Status transfer(String tableName, String key1, String key2, String field) {
+    // Check if both keys are on the same shard
+    int shard1 = getShardIndexByKey(key1);
+    int shard2 = getShardIndexByKey(key2);
+    
+    // If keys are on different shards, fall back to default implementation
+    if (shard1 != shard2) {
+      return super.transfer(tableName, key1, key2, field);
+    }
+    
     Connection conn = null;
     boolean wasAutoCommit = autoCommit;
     try {
-      // Use the connection for key1 (could be improved to handle cross-shard transfers)
+      // Both keys are on the same shard, use that connection
       conn = getShardConnectionByKey(key1);
       
       // Start transaction if not already in one
@@ -600,15 +611,15 @@ public class JdbcDBClient extends DB {
         conn.setAutoCommit(false);
       }
       
-      // Read both account balances
-      StatementType readType = new StatementType(StatementType.Type.READ, tableName, 1, "", getShardIndexByKey(key1));
-      PreparedStatement readStmt = cachedStatements.get(readType);
-      if (readStmt == null) {
-        readStmt = createAndCacheReadStatement(readType, key1);
+      // Read first account balance
+      StatementType readType1 = new StatementType(StatementType.Type.READ, tableName, 1, "", shard1);
+      PreparedStatement readStmt1 = cachedStatements.get(readType1);
+      if (readStmt1 == null) {
+        readStmt1 = createAndCacheReadStatement(readType1, key1);
       }
       
-      readStmt.setString(1, key1);
-      ResultSet rs1 = readStmt.executeQuery();
+      readStmt1.setString(1, key1);
+      ResultSet rs1 = readStmt1.executeQuery();
       if (!rs1.next()) {
         rs1.close();
         if (!inTransaction && !wasAutoCommit) {
@@ -620,8 +631,9 @@ public class JdbcDBClient extends DB {
       long balance1 = Long.parseLong(rs1.getString(field));
       rs1.close();
       
-      readStmt.setString(1, key2);
-      ResultSet rs2 = readStmt.executeQuery();
+      // Read second account balance
+      readStmt1.setString(1, key2);
+      ResultSet rs2 = readStmt1.executeQuery();
       if (!rs2.next()) {
         rs2.close();
         if (!inTransaction && !wasAutoCommit) {
@@ -643,7 +655,7 @@ public class JdbcDBClient extends DB {
       OrderedFieldInfo fieldInfo1 = getFieldInfo(update1);
       
       StatementType updateType = new StatementType(StatementType.Type.UPDATE, tableName,
-          1, fieldInfo1.getFieldKeys(), getShardIndexByKey(key1));
+          1, fieldInfo1.getFieldKeys(), shard1);
       PreparedStatement updateStmt = cachedStatements.get(updateType);
       if (updateStmt == null) {
         updateStmt = createAndCacheUpdateStatement(updateType, key1);
