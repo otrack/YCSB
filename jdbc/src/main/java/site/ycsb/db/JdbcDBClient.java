@@ -613,13 +613,13 @@ public class JdbcDBClient extends DB {
       
       // Read first account balance
       StatementType readType1 = new StatementType(StatementType.Type.READ, tableName, 1, "", shard1);
-      PreparedStatement readStmt1 = cachedStatements.get(readType1);
-      if (readStmt1 == null) {
-        readStmt1 = createAndCacheReadStatement(readType1, key1);
+      PreparedStatement readStmt = cachedStatements.get(readType1);
+      if (readStmt == null) {
+        readStmt = createAndCacheReadStatement(readType1, key1);
       }
       
-      readStmt1.setString(1, key1);
-      ResultSet rs1 = readStmt1.executeQuery();
+      readStmt.setString(1, key1);
+      ResultSet rs1 = readStmt.executeQuery();
       if (!rs1.next()) {
         rs1.close();
         if (!inTransaction && !wasAutoCommit) {
@@ -631,9 +631,9 @@ public class JdbcDBClient extends DB {
       long balance1 = Long.parseLong(rs1.getString(field));
       rs1.close();
       
-      // Read second account balance
-      readStmt1.setString(1, key2);
-      ResultSet rs2 = readStmt1.executeQuery();
+      // Read second account balance (reuse same statement with different parameter)
+      readStmt.setString(1, key2);
+      ResultSet rs2 = readStmt.executeQuery();
       if (!rs2.next()) {
         rs2.close();
         if (!inTransaction && !wasAutoCommit) {
@@ -661,10 +661,12 @@ public class JdbcDBClient extends DB {
         updateStmt = createAndCacheUpdateStatement(updateType, key1);
       }
       
+      // Execute first update
       updateStmt.setString(1, Long.toString(balance1));
       updateStmt.setString(2, key1);
       int result1 = updateStmt.executeUpdate();
       
+      // Execute second update (reuse statement, JDBC drivers should handle parameter rebinding)
       updateStmt.setString(1, Long.toString(balance2));
       updateStmt.setString(2, key2);
       int result2 = updateStmt.executeUpdate();

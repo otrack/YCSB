@@ -872,14 +872,8 @@ public class CassandraCQLClient extends DB {
     if (buffer == null) {
       return null;
     }
-    byte[] bytes;
-    if (buffer.hasArray()) {
-      bytes = new byte[buffer.remaining()];
-      buffer.duplicate().get(bytes);
-    } else {
-      bytes = new byte[buffer.remaining()];
-      buffer.duplicate().get(bytes);
-    }
+    byte[] bytes = new byte[buffer.remaining()];
+    buffer.duplicate().get(bytes);
     return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
   }
 
