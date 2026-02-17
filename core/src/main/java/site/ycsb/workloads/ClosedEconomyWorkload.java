@@ -25,7 +25,6 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Hashtable;
 import java.util.Properties;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -286,20 +285,9 @@ public class ClosedEconomyWorkload extends Workload {
   protected NumberGenerator scanLength;
   protected boolean orderedInserts;
   protected long recordCount;
-  protected long opCount;
   protected AtomicInteger actualOpCount = new AtomicInteger(0);
   protected Measurements measurements;
   protected boolean validateByQuery;
-
-  private final Hashtable<String, String> operations = new Hashtable<String, String>() {
-    {
-      put("READ", "TX-READ");
-      put("UPDATE", "TX-UPDATE");
-      put("INSERT", "TX-INSERT");
-      put("SCAN", "TX-SCAN");
-      put("READMODIFYWRITE", "TX-READMODIFYWRITE");
-    }
-  };
 
   protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
     NumberGenerator fieldLengthGenerator;

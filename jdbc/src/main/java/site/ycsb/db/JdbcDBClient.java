@@ -598,7 +598,7 @@ public class JdbcDBClient extends DB {
     if (transferStmt == null) {
       return super.transfer(tableName, key1, key2, field);
     }
-    
+
     Connection conn = null;
     boolean wasAutoCommit = autoCommit;
     PreparedStatement stmt = null;
