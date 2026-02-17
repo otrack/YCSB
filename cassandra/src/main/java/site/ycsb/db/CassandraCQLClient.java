@@ -753,11 +753,11 @@ public class CassandraCQLClient extends DB {
          .append("AND account1.").append(field).append(" IS NOT NULL ")
          .append("AND account2.").append(field).append(" IS NOT NULL THEN\n");
       cql.append("    UPDATE ").append(table)
-         .append(" SET ").append(field).append(" -= 1")
+         .append(" SET ").append(field).append(" = account2.").append(field)
          .append(" WHERE ").append(YCSB_KEY).append(" = '").append(escapedKey1).append("';\n");
       
       cql.append("    UPDATE ").append(table)
-         .append(" SET ").append(field).append(" += 1")
+         .append(" SET ").append(field).append(" = account1.").append(field)
          .append(" WHERE ").append(YCSB_KEY).append(" = '").append(escapedKey2).append("';\n");
       cql.append("  END IF\n");
       

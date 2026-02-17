@@ -37,55 +37,32 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
     return true;
   }
 
-  /**
-   * Creates a two-phase transaction statement for transferring values between two records.
-   * Uses CockroachDB's CTE (WITH clause) syntax with SELECT FOR UPDATE for proper row locking.
-   * 
-   * The generated SQL statement performs an atomic transfer operation:
-   * 1. Read both account balances with row locks (SELECT FOR UPDATE)
-   * 2. Update first account (decrement by 1)
-   * 3. Update second account (increment by 1)
-   * 
-   * All operations are performed in a single SQL statement using CTEs.
-   * 
-   * @param tableName the name of the table
-   * @param key1 the first record key (source account)
-   * @param key2 the second record key (destination account)
-   * @param field the field name to transfer
-   * @return A complete SQL statement using CTEs for atomic transfer
-   */
   @Override
   public String createTransferStatement(String tableName, String key1, String key2, String field) {
     StringBuilder sql = new StringBuilder();
-    
-    // Use CockroachDB's CTE syntax to perform the entire transfer in a single statement
-    // This ensures atomicity and uses SELECT FOR UPDATE for proper row locking
+
     sql.append("WITH ");
     
-    // Read first account balance with row lock
     sql.append("balance1 AS (");
     sql.append("SELECT ").append(field).append(" FROM ").append(tableName);
     sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? FOR UPDATE");
     sql.append("), ");
     
-    // Read second account balance with row lock
     sql.append("balance2 AS (");
     sql.append("SELECT ").append(field).append(" FROM ").append(tableName);
     sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? FOR UPDATE");
     sql.append("), ");
     
-    // Update first account (decrement by 1)
     sql.append("update1 AS (");
     sql.append("UPDATE ").append(tableName);
-    sql.append(" SET ").append(field).append(" = (SELECT ").append(field).append(" FROM balance1) - 1");
+    sql.append(" SET ").append(field).append(" = (SELECT ").append(field).append(" FROM balance2)");
     sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ?");
     sql.append(" RETURNING 1");
     sql.append("), ");
     
-    // Update second account (increment by 1)
     sql.append("update2 AS (");
     sql.append("UPDATE ").append(tableName);
-    sql.append(" SET ").append(field).append(" = (SELECT ").append(field).append(" FROM balance2) + 1");
+    sql.append(" SET ").append(field).append(" = (SELECT ").append(field).append(" FROM balance1)");
     sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ?");
     sql.append(" RETURNING 1");
     sql.append(") ");
