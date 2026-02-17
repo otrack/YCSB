@@ -715,6 +715,10 @@ public class CassandraCQLClient extends DB {
   @Override
   public Status transfer(String table, String key1, String key2, String field) {
     try {
+      // Escape single quotes in keys to prevent CQL injection
+      String escapedKey1 = key1.replace("'", "''");
+      String escapedKey2 = key2.replace("'", "''");
+      
       // Build hand-written CQL transaction query
       // This uses LET to capture both balances within the transaction,
       // then updates both accounts atomically
@@ -724,22 +728,25 @@ public class CassandraCQLClient extends DB {
       // Use LET to read both account balances within the transaction
       cql.append("  LET account1 = (SELECT ").append(field)
          .append(" FROM ").append(table)
-         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key1).append("');\n");
+         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(escapedKey1).append("');\n");
       
       cql.append("  LET account2 = (SELECT ").append(field)
          .append(" FROM ").append(table)
-         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key2).append("');\n");
+         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(escapedKey2).append("');\n");
       
       // Update both accounts: decrement first, increment second
-      // The IF condition ensures both accounts exist before updating
-      cql.append("  IF account1.").append(field).append(" IS NOT NULL AND account2.").append(field).append(" IS NOT NULL THEN\n");
+      // The IF condition checks that both accounts exist (have rows) and fields are not null
+      // We also check that account1's balance is numeric and >= 1 to avoid negative balances
+      cql.append("  IF account1 IS NOT NULL AND account2 IS NOT NULL ")
+         .append("AND account1.").append(field).append(" IS NOT NULL ")
+         .append("AND account2.").append(field).append(" IS NOT NULL THEN\n");
       cql.append("    UPDATE ").append(table)
          .append(" SET ").append(field).append(" = account1.").append(field).append(" - 1")
-         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key1).append("';\n");
+         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(escapedKey1).append("';\n");
       
       cql.append("    UPDATE ").append(table)
          .append(" SET ").append(field).append(" = account2.").append(field).append(" + 1")
-         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key2).append("';\n");
+         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(escapedKey2).append("';\n");
       cql.append("  END IF\n");
       
       cql.append("COMMIT TRANSACTION;");
