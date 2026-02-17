@@ -611,6 +611,7 @@ public class JdbcDBClient extends DB {
     Connection conn = null;
     boolean wasAutoCommit = autoCommit;
     PreparedStatement stmt = null;
+    ResultSet rs = null;
     try {
       // Both keys are on the same shard, use that connection
       conn = getShardConnectionByKey(key1);
@@ -630,7 +631,7 @@ public class JdbcDBClient extends DB {
       stmt.setString(4, key2);
       
       // Execute the statement
-      ResultSet rs = stmt.executeQuery();
+      rs = stmt.executeQuery();
       
       // Check if the transfer was successful
       boolean success = false;
@@ -638,8 +639,6 @@ public class JdbcDBClient extends DB {
         int affectedRows = rs.getInt("affected_rows");
         success = (affectedRows == 2); // Both updates should succeed
       }
-      rs.close();
-      stmt.close();
       
       // Commit if we started the transaction
       if (!inTransaction) {
@@ -652,9 +651,6 @@ public class JdbcDBClient extends DB {
     } catch (SQLException | NumberFormatException e) {
       System.err.println("Error in processing transfer on table: " + tableName + " - " + e);
       try {
-        if (stmt != null && !stmt.isClosed()) {
-          stmt.close();
-        }
         if (conn != null && !inTransaction) {
           conn.rollback();
           conn.setAutoCommit(wasAutoCommit);
@@ -663,6 +659,18 @@ public class JdbcDBClient extends DB {
         System.err.println("Error rolling back transfer: " + ex);
       }
       return Status.ERROR;
+    } finally {
+      // Clean up resources
+      try {
+        if (rs != null) {
+          rs.close();
+        }
+        if (stmt != null) {
+          stmt.close();
+        }
+      } catch (SQLException e) {
+        System.err.println("Error closing resources: " + e);
+      }
     }
   }
 
