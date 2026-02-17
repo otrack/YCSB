@@ -23,8 +23,14 @@ import site.ycsb.db.JdbcDBClient;
  */
 public class CockroachDBFlavor extends DefaultDBFlavor {
   
+  /**
+   * Marker string to indicate this flavor handles transfers with optimized two-phase transactions.
+   * The actual value is not used; only the non-null check matters.
+   */
+  private static final String TRANSFER_MARKER = "COCKROACHDB_OPTIMIZED_TRANSFER";
+  
   public CockroachDBFlavor() {
-    super(DBName.DEFAULT);
+    super(DBName.COCKROACHDB);
   }
 
   /**
@@ -51,6 +57,7 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
   @Override
   public String createTransferStatement(String tableName, String key1, String key2, String field) {
     // Return a non-null marker to indicate this flavor handles transfers specially
-    return "COCKROACHDB_TRANSFER";
+    // The JdbcDBClient checks for non-null to decide whether to use optimized transfer
+    return TRANSFER_MARKER;
   }
 }
