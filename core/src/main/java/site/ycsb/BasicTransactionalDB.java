@@ -198,6 +198,52 @@ public class BasicTransactionalDB extends DB {
     Map<String, String> removed = DATA.remove(recordKey);
     return removed != null ? Status.OK : Status.NOT_FOUND;
   }
+
+  /**
+   * Transfer operation using a proper two-phase transaction.
+   * This method acquires a lock, reads both accounts, updates both, and then releases the lock.
+   */
+  @Override
+  public Status transfer(String table, String key1, String key2, String field) {
+    MUTEX.lock();
+    try {
+      String recordKey1 = table + ":" + key1;
+      String recordKey2 = table + ":" + key2;
+      
+      Map<String, String> record1 = DATA.get(recordKey1);
+      Map<String, String> record2 = DATA.get(recordKey2);
+      
+      if (record1 == null || record2 == null) {
+        return Status.NOT_FOUND;
+      }
+      
+      String value1 = record1.get(field);
+      String value2 = record2.get(field);
+      
+      if (value1 == null || value2 == null) {
+        return Status.NOT_FOUND;
+      }
+      
+      try {
+        long balance1 = Long.parseLong(value1);
+        long balance2 = Long.parseLong(value2);
+        
+        // Transfer 1 unit
+        balance1--;
+        balance2++;
+        
+        // Update both accounts
+        record1.put(field, Long.toString(balance1));
+        record2.put(field, Long.toString(balance2));
+        
+        return Status.OK;
+      } catch (NumberFormatException e) {
+        return Status.ERROR;
+      }
+    } finally {
+      MUTEX.unlock();
+    }
+  }
   
   /**
    * Clear all data from the database. Useful for testing.

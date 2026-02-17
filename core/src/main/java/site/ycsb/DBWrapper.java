@@ -52,6 +52,7 @@ public class DBWrapper extends DB {
   private final String scopeStringRead;
   private final String scopeStringScan;
   private final String scopeStringUpdate;
+  private final String scopeStringTransfer;
 
   public DBWrapper(final DB db, final Tracer tracer) {
     this.db = db;
@@ -65,6 +66,7 @@ public class DBWrapper extends DB {
     scopeStringRead = simple + "#read";
     scopeStringScan = simple + "#scan";
     scopeStringUpdate = simple + "#update";
+    scopeStringTransfer = simple + "#transfer";
   }
 
   /**
@@ -247,6 +249,28 @@ public class DBWrapper extends DB {
       long en = System.nanoTime();
       measure("DELETE", res, ist, st, en);
       measurements.reportStatus("DELETE", res);
+      return res;
+    }
+  }
+
+  /**
+   * Transfer operation for closed economy workload.
+   * Transfers a value from one record to another.
+   *
+   * @param table The name of the table
+   * @param key1 The record key of the first record (source)
+   * @param key2 The record key of the second record (destination)
+   * @param field The field name to transfer
+   * @return The result of the operation.
+   */
+  public Status transfer(String table, String key1, String key2, String field) {
+    try (final TraceScope span = tracer.newScope(scopeStringTransfer)) {
+      long ist = measurements.getIntendedStartTimeNs();
+      long st = System.nanoTime();
+      Status res = db.transfer(table, key1, key2, field);
+      long en = System.nanoTime();
+      measure("TX-READMODIFYWRITE", res, ist, st, en);
+      measurements.reportStatus("TX-READMODIFYWRITE", res);
       return res;
     }
   }

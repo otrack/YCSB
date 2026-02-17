@@ -25,7 +25,6 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Hashtable;
 import java.util.Properties;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -286,20 +285,9 @@ public class ClosedEconomyWorkload extends Workload {
   protected NumberGenerator scanLength;
   protected boolean orderedInserts;
   protected long recordCount;
-  protected long opCount;
   protected AtomicInteger actualOpCount = new AtomicInteger(0);
   protected Measurements measurements;
   protected boolean validateByQuery;
-
-  private final Hashtable<String, String> operations = new Hashtable<String, String>() {
-    {
-      put("READ", "TX-READ");
-      put("UPDATE", "TX-UPDATE");
-      put("INSERT", "TX-INSERT");
-      put("SCAN", "TX-SCAN");
-      put("READMODIFYWRITE", "TX-READMODIFYWRITE");
-    }
-  };
 
   protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
     NumberGenerator fieldLengthGenerator;
@@ -505,11 +493,9 @@ public class ClosedEconomyWorkload extends Workload {
    */
   @Override
   public boolean doTransaction(DB db, Object threadState) {
-    boolean ret;
-    long st = System.nanoTime();
-
     String op = operationChooser.nextString();
 
+    boolean ret;
     if (op.equals("READ")) {
       ret = doTransactionRead(db);
     } else if (op.equals("UPDATE")) {
@@ -522,13 +508,6 @@ public class ClosedEconomyWorkload extends Workload {
       ret = doTransactionReadModifyWrite(db);
     }
 
-    long en = System.nanoTime();
-    measurements.measure(operations.get(op), (int) ((en - st) / 1000));
-    if (ret) {
-      measurements.reportStatus(operations.get(op), Status.OK);
-    } else {
-      measurements.reportStatus(operations.get(op), Status.ERROR);
-    }
     actualOpCount.addAndGet(1);
 
     return ret;
@@ -588,43 +567,7 @@ public class ClosedEconomyWorkload extends Workload {
     String firstKey = buildKeyName(first);
     String secondKey = buildKeyName(second);
 
-    HashSet<String> fields = new HashSet<>();
-    if (!readAllFields) {
-      String fieldName = "field" + fieldChooser.nextString();
-      fields.add(fieldName);
-    } else {
-      fields.add(DEFAULT_FIELD_NAME);
-    }
-
-    HashMap<String, ByteIterator> firstValues = new HashMap<>();
-    HashMap<String, ByteIterator> secondValues = new HashMap<>();
-
-    long st = System.nanoTime();
-    if (db.read(table, firstKey, fields, firstValues).isOk() &&
-        db.read(table, secondKey, fields, secondValues).isOk()) {
-      try {
-        long firstAmount = Long.parseLong(firstValues.get(DEFAULT_FIELD_NAME).toString());
-        long secondAmount = Long.parseLong(secondValues.get(DEFAULT_FIELD_NAME).toString());
-
-        firstAmount--;
-        secondAmount++;
-
-        firstValues.put(DEFAULT_FIELD_NAME, new StringByteIterator(Long.toString(firstAmount)));
-        secondValues.put(DEFAULT_FIELD_NAME, new StringByteIterator(Long.toString(secondAmount)));
-
-        if (!db.update(table, firstKey, firstValues).isOk() ||
-            !db.update(table, secondKey, secondValues).isOk()) {
-          return false;
-        }
-
-        long en = System.nanoTime();
-        measurements.measure(operations.get("READMODIFYWRITE"), (int) (en - st) / 1000);
-      } catch (NumberFormatException e) {
-        return false;
-      }
-      return true;
-    }
-    return false;
+    return db.transfer(table, firstKey, secondKey, DEFAULT_FIELD_NAME).isOk();
   }
 
   /**

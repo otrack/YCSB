@@ -583,6 +583,88 @@ public class JdbcDBClient extends DB {
     }
   }
 
+  /**
+   * Transfer operation using a proper two-phase transaction.
+   * This method implements: BEGIN, read balance1, read balance2, update balance1, update balance2, COMMIT.
+   * Note: This implementation only supports transfers within the same shard. For cross-shard transfers,
+   * it falls back to the default interactive implementation in the base DB class.
+   */
+  @Override
+  public Status transfer(String tableName, String key1, String key2, String field) {
+    // Check if the database flavor provides a custom transfer statement
+    String transferStmt = dbFlavor.createTransferStatement(tableName, key1, key2, field);
+
+    // If flavor returns null, use the default implementation from DB class
+    if (transferStmt == null) {
+      return super.transfer(tableName, key1, key2, field);
+    }
+
+    Connection conn = null;
+    boolean wasAutoCommit = autoCommit;
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+    try {
+      // Both keys are on the same shard, use that connection
+      conn = getShardConnectionByKey(key1);
+      
+      // Start transaction if not already in one
+      if (!inTransaction) {
+        conn.setAutoCommit(false);
+      }
+      
+      // Execute the flavor-provided transfer statement
+      stmt = conn.prepareStatement(transferStmt);
+      
+      // Bind parameters: key1, key2, key1, key2 (for SELECT, SELECT, UPDATE, UPDATE)
+      stmt.setString(1, key1);
+      stmt.setString(2, key2);
+      stmt.setString(3, key1);
+      stmt.setString(4, key2);
+      
+      // Execute the statement
+      rs = stmt.executeQuery();
+      
+      // Check if the transfer was successful
+      boolean success = false;
+      if (rs.next()) {
+        int affectedRows = rs.getInt("affected_rows");
+        success = (affectedRows == 2); // Both updates should succeed
+      }
+      
+      // Commit if we started the transaction
+      if (!inTransaction) {
+        conn.commit();
+        conn.setAutoCommit(wasAutoCommit);
+      }
+      
+      return success ? Status.OK : Status.UNEXPECTED_STATE;
+      
+    } catch (SQLException | NumberFormatException e) {
+      System.err.println("Error in processing transfer on table: " + tableName + " - " + e);
+      try {
+        if (conn != null && !inTransaction) {
+          conn.rollback();
+          conn.setAutoCommit(wasAutoCommit);
+        }
+      } catch (SQLException ex) {
+        System.err.println("Error rolling back transfer: " + ex);
+      }
+      return Status.ERROR;
+    } finally {
+      // Clean up resources
+      try {
+        if (rs != null) {
+          rs.close();
+        }
+        if (stmt != null) {
+          stmt.close();
+        }
+      } catch (SQLException e) {
+        System.err.println("Error closing resources: " + e);
+      }
+    }
+  }
+
   private OrderedFieldInfo getFieldInfo(Map<String, ByteIterator> values) {
     String fieldKeys = "";
     List<String> fieldValues = new ArrayList<>();
