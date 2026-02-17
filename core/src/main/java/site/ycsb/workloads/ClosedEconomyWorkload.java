@@ -505,11 +505,9 @@ public class ClosedEconomyWorkload extends Workload {
    */
   @Override
   public boolean doTransaction(DB db, Object threadState) {
-    boolean ret;
-    long st = System.nanoTime();
-
     String op = operationChooser.nextString();
 
+    boolean ret;
     if (op.equals("READ")) {
       ret = doTransactionRead(db);
     } else if (op.equals("UPDATE")) {
@@ -522,13 +520,6 @@ public class ClosedEconomyWorkload extends Workload {
       ret = doTransactionReadModifyWrite(db);
     }
 
-    long en = System.nanoTime();
-    measurements.measure(operations.get(op), (int) ((en - st) / 1000));
-    if (ret) {
-      measurements.reportStatus(operations.get(op), Status.OK);
-    } else {
-      measurements.reportStatus(operations.get(op), Status.ERROR);
-    }
     actualOpCount.addAndGet(1);
 
     return ret;
