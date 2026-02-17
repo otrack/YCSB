@@ -593,18 +593,9 @@ public class JdbcDBClient extends DB {
   public Status transfer(String tableName, String key1, String key2, String field) {
     // Check if the database flavor provides a custom transfer statement
     String transferStmt = dbFlavor.createTransferStatement(tableName, key1, key2, field);
-    
+
     // If flavor returns null, use the default implementation from DB class
     if (transferStmt == null) {
-      return super.transfer(tableName, key1, key2, field);
-    }
-    
-    // Check if both keys are on the same shard
-    int shard1 = getShardIndexByKey(key1);
-    int shard2 = getShardIndexByKey(key2);
-    
-    // If keys are on different shards, fall back to default implementation
-    if (shard1 != shard2) {
       return super.transfer(tableName, key1, key2, field);
     }
     
