@@ -705,176 +705,58 @@ public class CassandraCQLClient extends DB {
   }
 
   /**
-   * Transfer operation using a proper two-phase transaction.
-   * This method attempts to use Cassandra transactions if supported (Cassandra 5+),
-   * and falls back to using BATCH for atomicity on older versions.
+   * Transfer operation using a proper two-phase transaction with hand-written CQL.
+   * This implements Cassandra Accord transactions using LET statements to read values
+   * within the transaction scope, then conditionally updates both accounts.
+   * The entire operation is executed as a single CQL statement.
+   * 
+   * Based on: https://github.com/pmcfadin/awesome-accord/blob/main/examples/inventory/transaction.cql
    */
   @Override
   public Status transfer(String table, String key1, String key2, String field) {
     try {
-      // Try to use transaction support if available (Cassandra 5+)
-      try {
-        session.execute("BEGIN TRANSACTION");
-      } catch (Exception e) {
-        // If transactions are not supported, fall back to BATCH
-        return transferWithBatch(table, key1, key2, field);
+      // Build hand-written CQL transaction query
+      // This uses LET to capture both balances within the transaction,
+      // then updates both accounts atomically
+      StringBuilder cql = new StringBuilder();
+      cql.append("BEGIN TRANSACTION\n");
+      
+      // Use LET to read both account balances within the transaction
+      cql.append("  LET account1 = (SELECT ").append(field)
+         .append(" FROM ").append(table)
+         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key1).append("');\n");
+      
+      cql.append("  LET account2 = (SELECT ").append(field)
+         .append(" FROM ").append(table)
+         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key2).append("');\n");
+      
+      // Update both accounts: decrement first, increment second
+      // The IF condition ensures both accounts exist before updating
+      cql.append("  IF account1.").append(field).append(" IS NOT NULL AND account2.").append(field).append(" IS NOT NULL THEN\n");
+      cql.append("    UPDATE ").append(table)
+         .append(" SET ").append(field).append(" = account1.").append(field).append(" - 1")
+         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key1).append("';\n");
+      
+      cql.append("    UPDATE ").append(table)
+         .append(" SET ").append(field).append(" = account2.").append(field).append(" + 1")
+         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key2).append("';\n");
+      cql.append("  END IF\n");
+      
+      cql.append("COMMIT TRANSACTION;");
+      
+      if (debug) {
+        logger.debug("Executing transaction CQL: {}", cql.toString());
       }
       
-      // Read both account balances
-      PreparedStatement readStmt = readAllStmt.get();
-      if (readStmt == null) {
-        Select.Where selectStmt = QueryBuilder.select().all().from(table)
-            .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
-        selectStmt.setConsistencyLevel(readConsistencyLevel);
-        readStmt = session.prepare(selectStmt);
-        readAllStmt.set(readStmt);
-      }
-      
-      // Read first account
-      ResultSet rs1 = session.execute(readStmt.bind(key1));
-      if (rs1.isExhausted()) {
-        session.execute("ABORT TRANSACTION");
-        return Status.NOT_FOUND;
-      }
-      Row row1 = rs1.one();
-      ByteBuffer val1 = row1.getBytesUnsafe(field);
-      if (val1 == null) {
-        session.execute("ABORT TRANSACTION");
-        return Status.NOT_FOUND;
-      }
-      long balance1 = Long.parseLong(getStringFromByteBuffer(val1));
-      
-      // Read second account
-      ResultSet rs2 = session.execute(readStmt.bind(key2));
-      if (rs2.isExhausted()) {
-        session.execute("ABORT TRANSACTION");
-        return Status.NOT_FOUND;
-      }
-      Row row2 = rs2.one();
-      ByteBuffer val2 = row2.getBytesUnsafe(field);
-      if (val2 == null) {
-        session.execute("ABORT TRANSACTION");
-        return Status.NOT_FOUND;
-      }
-      long balance2 = Long.parseLong(getStringFromByteBuffer(val2));
-      
-      // Transfer 1 unit
-      balance1--;
-      balance2++;
-      
-      // Prepare update statement
-      Set<String> fields = new HashSet<>();
-      fields.add(field);
-      PreparedStatement updateStmt = updateStmts.get(fields);
-      if (updateStmt == null) {
-        Update update = QueryBuilder.update(table);
-        update.with(QueryBuilder.set(field, QueryBuilder.bindMarker()));
-        update.where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
-        update.setConsistencyLevel(writeConsistencyLevel);
-        updateStmt = session.prepare(update);
-        updateStmts.putIfAbsent(new HashSet<>(fields), updateStmt);
-      }
-      
-      // Update both accounts
-      session.execute(updateStmt.bind(Long.toString(balance1), key1));
-      session.execute(updateStmt.bind(Long.toString(balance2), key2));
-      
-      // Commit transaction
-      session.execute("COMMIT TRANSACTION");
+      // Execute the hand-written transaction as a single statement
+      session.execute(cql.toString());
       
       return Status.OK;
       
     } catch (Exception e) {
       logger.error("Error in transfer operation", e);
-      try {
-        session.execute("ABORT TRANSACTION");
-      } catch (Exception abortEx) {
-        // Ignore abort errors
-      }
       return Status.ERROR;
     }
-  }
-
-  /**
-   * Transfer implementation using BATCH for Cassandra versions without transaction support.
-   */
-  private Status transferWithBatch(String table, String key1, String key2, String field) {
-    try {
-      // Read both account balances (outside the batch)
-      PreparedStatement readStmt = readAllStmt.get();
-      if (readStmt == null) {
-        Select.Where selectStmt = QueryBuilder.select().all().from(table)
-            .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
-        selectStmt.setConsistencyLevel(readConsistencyLevel);
-        readStmt = session.prepare(selectStmt);
-        readAllStmt.set(readStmt);
-      }
-      
-      // Read first account
-      ResultSet rs1 = session.execute(readStmt.bind(key1));
-      if (rs1.isExhausted()) {
-        return Status.NOT_FOUND;
-      }
-      Row row1 = rs1.one();
-      ByteBuffer val1 = row1.getBytesUnsafe(field);
-      if (val1 == null) {
-        return Status.NOT_FOUND;
-      }
-      long balance1 = Long.parseLong(getStringFromByteBuffer(val1));
-      
-      // Read second account
-      ResultSet rs2 = session.execute(readStmt.bind(key2));
-      if (rs2.isExhausted()) {
-        return Status.NOT_FOUND;
-      }
-      Row row2 = rs2.one();
-      ByteBuffer val2 = row2.getBytesUnsafe(field);
-      if (val2 == null) {
-        return Status.NOT_FOUND;
-      }
-      long balance2 = Long.parseLong(getStringFromByteBuffer(val2));
-      
-      // Transfer 1 unit
-      balance1--;
-      balance2++;
-      
-      // Create a batch statement with both updates
-      Batch batch = QueryBuilder.batch();
-      
-      Update update1 = QueryBuilder.update(table);
-      update1.with(QueryBuilder.set(field, Long.toString(balance1)));
-      update1.where(QueryBuilder.eq(YCSB_KEY, key1));
-      
-      Update update2 = QueryBuilder.update(table);
-      update2.with(QueryBuilder.set(field, Long.toString(balance2)));
-      update2.where(QueryBuilder.eq(YCSB_KEY, key2));
-      
-      batch.add(update1);
-      batch.add(update2);
-      batch.setConsistencyLevel(writeConsistencyLevel);
-      
-      // Execute the batch atomically
-      session.execute(batch);
-      
-      return Status.OK;
-      
-    } catch (Exception e) {
-      logger.error("Error in batch transfer operation", e);
-      return Status.ERROR;
-    }
-  }
-
-  /**
-   * Safely convert a ByteBuffer to a String.
-   * Handles cases where the buffer's position is not at zero or it's read-only.
-   */
-  private String getStringFromByteBuffer(ByteBuffer buffer) {
-    if (buffer == null) {
-      return null;
-    }
-    byte[] bytes = new byte[buffer.remaining()];
-    buffer.duplicate().get(bytes);
-    return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
   }
 
 }
