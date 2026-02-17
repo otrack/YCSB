@@ -20,14 +20,10 @@ import site.ycsb.db.JdbcDBClient;
 
 /**
  * A flavor for CockroachDB that provides optimized two-phase transaction support.
+ * Uses CockroachDB's CTE (Common Table Expression) syntax to perform atomic transfers
+ * in a single SQL statement.
  */
 public class CockroachDBFlavor extends DefaultDBFlavor {
-  
-  /**
-   * Marker string to indicate this flavor handles transfers with optimized two-phase transactions.
-   * The actual value is not used; only the non-null check matters.
-   */
-  private static final String TRANSFER_MARKER = "COCKROACHDB_OPTIMIZED_TRANSFER";
   
   public CockroachDBFlavor() {
     super(DBName.COCKROACHDB);
@@ -43,21 +39,60 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
 
   /**
    * Creates a two-phase transaction statement for transferring values between two records.
-   * Uses CockroachDB's SELECT ... FOR UPDATE syntax for proper row locking.
+   * Uses CockroachDB's CTE (WITH clause) syntax with SELECT FOR UPDATE for proper row locking.
    * 
-   * Returns a marker string indicating CockroachDB-specific handling is needed.
-   * The actual implementation is done in JdbcDBClient with proper transaction management.
+   * The generated SQL statement performs an atomic transfer operation:
+   * 1. Read both account balances with row locks (SELECT FOR UPDATE)
+   * 2. Update first account (decrement by 1)
+   * 3. Update second account (increment by 1)
+   * 
+   * All operations are performed in a single SQL statement using CTEs.
    * 
    * @param tableName the name of the table
    * @param key1 the first record key (source account)
    * @param key2 the second record key (destination account)
    * @param field the field name to transfer
-   * @return A marker string indicating custom transfer handling
+   * @return A complete SQL statement using CTEs for atomic transfer
    */
   @Override
   public String createTransferStatement(String tableName, String key1, String key2, String field) {
-    // Return a non-null marker to indicate this flavor handles transfers specially
-    // The JdbcDBClient checks for non-null to decide whether to use optimized transfer
-    return TRANSFER_MARKER;
+    StringBuilder sql = new StringBuilder();
+    
+    // Use CockroachDB's CTE syntax to perform the entire transfer in a single statement
+    // This ensures atomicity and uses SELECT FOR UPDATE for proper row locking
+    sql.append("WITH ");
+    
+    // Read first account balance with row lock
+    sql.append("balance1 AS (");
+    sql.append("SELECT ").append(field).append(" FROM ").append(tableName);
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? FOR UPDATE");
+    sql.append("), ");
+    
+    // Read second account balance with row lock
+    sql.append("balance2 AS (");
+    sql.append("SELECT ").append(field).append(" FROM ").append(tableName);
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? FOR UPDATE");
+    sql.append("), ");
+    
+    // Update first account (decrement by 1)
+    sql.append("update1 AS (");
+    sql.append("UPDATE ").append(tableName);
+    sql.append(" SET ").append(field).append(" = (SELECT ").append(field).append(" FROM balance1) - 1");
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ?");
+    sql.append(" RETURNING 1");
+    sql.append("), ");
+    
+    // Update second account (increment by 1)
+    sql.append("update2 AS (");
+    sql.append("UPDATE ").append(tableName);
+    sql.append(" SET ").append(field).append(" = (SELECT ").append(field).append(" FROM balance2) + 1");
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ?");
+    sql.append(" RETURNING 1");
+    sql.append(") ");
+    
+    // Final SELECT to complete the statement
+    sql.append("SELECT (SELECT COUNT(*) FROM update1) + (SELECT COUNT(*) FROM update2) AS affected_rows");
+    
+    return sql.toString();
   }
 }

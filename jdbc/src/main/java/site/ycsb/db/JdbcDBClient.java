@@ -599,7 +599,6 @@ public class JdbcDBClient extends DB {
       return super.transfer(tableName, key1, key2, field);
     }
     
-    // Otherwise, use the JDBC two-phase transaction implementation
     // Check if both keys are on the same shard
     int shard1 = getShardIndexByKey(key1);
     int shard2 = getShardIndexByKey(key2);
@@ -611,6 +610,7 @@ public class JdbcDBClient extends DB {
     
     Connection conn = null;
     boolean wasAutoCommit = autoCommit;
+    PreparedStatement stmt = null;
     try {
       // Both keys are on the same shard, use that connection
       conn = getShardConnectionByKey(key1);
@@ -620,65 +620,26 @@ public class JdbcDBClient extends DB {
         conn.setAutoCommit(false);
       }
       
-      // Read first account balance
-      StatementType readType1 = new StatementType(StatementType.Type.READ, tableName, 1, "", shard1);
-      PreparedStatement readStmt = cachedStatements.get(readType1);
-      if (readStmt == null) {
-        readStmt = createAndCacheReadStatement(readType1, key1);
+      // Execute the flavor-provided transfer statement
+      stmt = conn.prepareStatement(transferStmt);
+      
+      // Bind parameters: key1, key2, key1, key2 (for SELECT, SELECT, UPDATE, UPDATE)
+      stmt.setString(1, key1);
+      stmt.setString(2, key2);
+      stmt.setString(3, key1);
+      stmt.setString(4, key2);
+      
+      // Execute the statement
+      ResultSet rs = stmt.executeQuery();
+      
+      // Check if the transfer was successful
+      boolean success = false;
+      if (rs.next()) {
+        int affectedRows = rs.getInt("affected_rows");
+        success = (affectedRows == 2); // Both updates should succeed
       }
-      
-      readStmt.setString(1, key1);
-      ResultSet rs1 = readStmt.executeQuery();
-      if (!rs1.next()) {
-        rs1.close();
-        if (!inTransaction && !wasAutoCommit) {
-          conn.rollback();
-          conn.setAutoCommit(wasAutoCommit);
-        }
-        return Status.NOT_FOUND;
-      }
-      long balance1 = Long.parseLong(rs1.getString(field));
-      rs1.close();
-      
-      // Read second account balance (reuse same statement with different parameter)
-      readStmt.setString(1, key2);
-      ResultSet rs2 = readStmt.executeQuery();
-      if (!rs2.next()) {
-        rs2.close();
-        if (!inTransaction && !wasAutoCommit) {
-          conn.rollback();
-          conn.setAutoCommit(wasAutoCommit);
-        }
-        return Status.NOT_FOUND;
-      }
-      long balance2 = Long.parseLong(rs2.getString(field));
-      rs2.close();
-      
-      // Transfer 1 unit
-      balance1--;
-      balance2++;
-      
-      // Update both accounts
-      Map<String, ByteIterator> update1 = new HashMap<>();
-      update1.put(field, new StringByteIterator(Long.toString(balance1)));
-      OrderedFieldInfo fieldInfo1 = getFieldInfo(update1);
-      
-      StatementType updateType = new StatementType(StatementType.Type.UPDATE, tableName,
-          1, fieldInfo1.getFieldKeys(), shard1);
-      PreparedStatement updateStmt = cachedStatements.get(updateType);
-      if (updateStmt == null) {
-        updateStmt = createAndCacheUpdateStatement(updateType, key1);
-      }
-      
-      // Execute first update
-      updateStmt.setString(1, Long.toString(balance1));
-      updateStmt.setString(2, key1);
-      int result1 = updateStmt.executeUpdate();
-      
-      // Execute second update (PreparedStatement parameters are rebound by setString calls)
-      updateStmt.setString(1, Long.toString(balance2));
-      updateStmt.setString(2, key2);
-      int result2 = updateStmt.executeUpdate();
+      rs.close();
+      stmt.close();
       
       // Commit if we started the transaction
       if (!inTransaction) {
@@ -686,18 +647,24 @@ public class JdbcDBClient extends DB {
         conn.setAutoCommit(wasAutoCommit);
       }
       
-      if (result1 == 1 && result2 == 1) {
-        return Status.OK;
-      }
-      return Status.UNEXPECTED_STATE;
+      return success ? Status.OK : Status.UNEXPECTED_STATE;
       
     } catch (SQLException | NumberFormatException e) {
       System.err.println("Error in processing transfer on table: " + tableName + " - " + e);
       try {
+        if (stmt != null && !stmt.isClosed()) {
+          stmt.close();
+        }
         if (conn != null && !inTransaction) {
           conn.rollback();
           conn.setAutoCommit(wasAutoCommit);
         }
+      } catch (SQLException ex) {
+        System.err.println("Error rolling back transfer: " + ex);
+      }
+      return Status.ERROR;
+    }
+  }
       } catch (SQLException ex) {
         System.err.println("Error rolling back transfer: " + ex);
       }
