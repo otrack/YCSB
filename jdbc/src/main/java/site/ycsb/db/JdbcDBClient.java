@@ -665,12 +665,6 @@ public class JdbcDBClient extends DB {
       return Status.ERROR;
     }
   }
-      } catch (SQLException ex) {
-        System.err.println("Error rolling back transfer: " + ex);
-      }
-      return Status.ERROR;
-    }
-  }
 
   private OrderedFieldInfo getFieldInfo(Map<String, ByteIterator> values) {
     String fieldKeys = "";
