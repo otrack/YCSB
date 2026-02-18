@@ -219,12 +219,18 @@ public class CassandraCQLClient extends DB {
               loadBalancingPolicy.distance(discoveredHost));
         }
 
+        com.datastax.driver.core.Configuration configuration = cluster.getConfiguration();
+        // data consistency
+        configuration.getQueryOptions()
+            .setConsistencyLevel(readConsistencyLevel)
+            .setSerialConsistencyLevel(writeConsistencyLevel);
         // access local but not remote
-        cluster.getConfiguration().getPoolingOptions()
+        configuration.getPoolingOptions()
             .setCoreConnectionsPerHost(HostDistance.REMOTE, 0)
             .setConnectionsPerHost(HostDistance.LOCAL, 1, Runtime.getRuntime().availableProcessors());
 
         session = cluster.connect(keyspace);
+
 
       } catch (Exception e) {
         throw new DBException(e);
@@ -258,54 +264,6 @@ public class CassandraCQLClient extends DB {
         throw new DBException(
             String.format("initCount is negative: %d", curInitCount));
       }
-    }
-  }
-
-  /**
-   * Start a database transaction.
-   * Uses Cassandra 5's transaction support via BEGIN TRANSACTION statement.
-   */
-  @Override
-  public void start() throws DBException {
-    try {
-      session.execute("BEGIN TRANSACTION");
-      if (debug) {
-        logger.debug("Started transaction");
-      }
-    } catch (Exception e) {
-      throw new DBException("Error starting transaction: " + e);
-    }
-  }
-
-  /**
-   * Commit the current database transaction.
-   * Uses Cassandra 5's transaction support via COMMIT TRANSACTION statement.
-   */
-  @Override
-  public void commit() throws DBException {
-    try {
-      session.execute("COMMIT TRANSACTION");
-      if (debug) {
-        logger.debug("Committed transaction");
-      }
-    } catch (Exception e) {
-      throw new DBException("Error committing transaction: " + e);
-    }
-  }
-
-  /**
-   * Abort the current database transaction.
-   * Uses Cassandra 5's transaction support via ABORT TRANSACTION statement.
-   */
-  @Override
-  public void abort() throws DBException {
-    try {
-      session.execute("ABORT TRANSACTION");
-      if (debug) {
-        logger.debug("Aborted transaction");
-      }
-    } catch (Exception e) {
-      throw new DBException("Error aborting transaction: " + e);
     }
   }
 
@@ -344,8 +302,6 @@ public class CassandraCQLClient extends DB {
 
         Select.Where readStmt = selectBuilder.from(table)
             .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
-
-        readStmt.setConsistencyLevel(readConsistencyLevel);
 
         stmt = session.prepare(readStmt);
 
@@ -452,7 +408,6 @@ public class CassandraCQLClient extends DB {
         scanStmt.append(QueryBuilder.bindMarker());
 
         stmt = session.prepare(scanStmt.toString());
-        stmt.setConsistencyLevel(readConsistencyLevel);
         if (trace) {
           stmt.enableTracing();
         }
@@ -532,11 +487,7 @@ public class CassandraCQLClient extends DB {
         updateStmt.where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
         if (writeConsistencyLevel.equals(ConsistencyLevel.SERIAL)) {
           updateStmt.onlyIf(QueryBuilder.ne(FIELD0, "test")); // serializable updates require a "conditional if"
-          updateStmt.setSerialConsistencyLevel(ConsistencyLevel.SERIAL);
         }
-        updateStmt.setConsistencyLevel(writeConsistencyLevel);
-
-        System.out.println(updateStmt);
 
         stmt = session.prepare(updateStmt);
 
@@ -614,9 +565,7 @@ public class CassandraCQLClient extends DB {
 
         if (writeConsistencyLevel.equals(ConsistencyLevel.SERIAL)) {
           insertStmt.ifNotExists();
-          insertStmt.setSerialConsistencyLevel(ConsistencyLevel.SERIAL);
         }
-        insertStmt.setConsistencyLevel(writeConsistencyLevel);
 
         System.out.println(insertStmt);
 
@@ -679,7 +628,6 @@ public class CassandraCQLClient extends DB {
       if (stmt == null) {
         stmt = session.prepare(QueryBuilder.delete().from(table)
                                .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker())));
-        stmt.setConsistencyLevel(writeConsistencyLevel);
 
         if (trace) {
           stmt.enableTracing();
