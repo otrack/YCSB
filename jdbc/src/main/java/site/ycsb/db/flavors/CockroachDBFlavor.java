@@ -20,8 +20,7 @@ import site.ycsb.db.JdbcDBClient;
 
 /**
  * A flavor for CockroachDB that provides optimized two-phase transaction support.
- * Uses CockroachDB's CTE (Common Table Expression) syntax to perform atomic transfers
- * in a single SQL statement.
+ * Uses a single UPDATE statement in a CTE to reduce lock footprint and round trips.
  */
 public class CockroachDBFlavor extends DefaultDBFlavor {
   
@@ -41,34 +40,17 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
   public String createTransferStatement(String tableName, String key1, String key2, String field) {
     StringBuilder sql = new StringBuilder();
 
-    sql.append("WITH ");
-    
-    sql.append("balance1 AS (");
-    sql.append("SELECT ").append(field).append(" FROM ").append(tableName);
-    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? FOR UPDATE");
-    sql.append("), ");
-    
-    sql.append("balance2 AS (");
-    sql.append("SELECT ").append(field).append(" FROM ").append(tableName);
-    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? FOR UPDATE");
-    sql.append("), ");
-    
-    sql.append("update1 AS (");
+    sql.append("WITH update_rows AS (");
     sql.append("UPDATE ").append(tableName);
-    sql.append(" SET ").append(field).append(" = (SELECT ").append(field).append(" FROM balance2)");
-    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ?");
-    sql.append(" RETURNING 1");
-    sql.append("), ");
-    
-    sql.append("update2 AS (");
-    sql.append("UPDATE ").append(tableName);
-    sql.append(" SET ").append(field).append(" = (SELECT ").append(field).append(" FROM balance1)");
-    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" = ?");
+    sql.append(" SET ").append(field).append(" = CASE");
+    sql.append(" WHEN ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? THEN ").append(field).append(" - 1");
+    sql.append(" WHEN ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? THEN ").append(field).append(" + 1");
+    sql.append(" ELSE ").append(field);
+    sql.append(" END");
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" IN (?, ?)");
     sql.append(" RETURNING 1");
     sql.append(") ");
-    
-    // Final SELECT to complete the statement
-    sql.append("SELECT (SELECT COUNT(*) FROM update1) + (SELECT COUNT(*) FROM update2) AS affected_rows");
+    sql.append("SELECT COUNT(*) AS affected_rows FROM update_rows");
     
     return sql.toString();
   }
