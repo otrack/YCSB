@@ -105,10 +105,8 @@ public class CassandraCQLClient extends DB {
    */
   private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
 
-  private static boolean debug = false;
-
   private static boolean trace = false;
-  
+
   /**
    * Initialize any state for this DB. Called once per DB instance; there is one
    * DB instance per client thread.
@@ -130,8 +128,6 @@ public class CassandraCQLClient extends DB {
 
       try {
 
-        debug =
-            Boolean.parseBoolean(getProperties().getProperty("debug", "false"));
         trace = Boolean.valueOf(getProperties().getProperty(TRACING_PROPERTY, TRACING_PROPERTY_DEFAULT));
 
         String host = getProperties().getProperty(HOSTS_PROPERTY);
@@ -303,6 +299,7 @@ public class CassandraCQLClient extends DB {
         Select.Where readStmt = selectBuilder.from(table)
             .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()));
 
+        readStmt.setConsistencyLevel(readConsistencyLevel);
         stmt = session.prepare(readStmt);
 
         if (trace) {
@@ -488,7 +485,7 @@ public class CassandraCQLClient extends DB {
         if (writeConsistencyLevel.equals(ConsistencyLevel.SERIAL)) {
           updateStmt.onlyIf(QueryBuilder.ne(FIELD0, "test")); // serializable updates require a "conditional if"
         }
-
+        updateStmt.setConsistencyLevel(writeConsistencyLevel);
         stmt = session.prepare(updateStmt);
 
         if (trace) {
@@ -567,8 +564,7 @@ public class CassandraCQLClient extends DB {
           insertStmt.ifNotExists();
         }
 
-        System.out.println(insertStmt);
-
+        insertStmt.setConsistencyLevel(writeConsistencyLevel);
         stmt = session.prepare(insertStmt);
 
         if (trace) {
@@ -633,6 +629,7 @@ public class CassandraCQLClient extends DB {
           stmt.enableTracing();
         }
 
+        stmt.setConsistencyLevel(writeConsistencyLevel);
         PreparedStatement prevStmt = deleteStmt.getAndSet(stmt);
         if (prevStmt != null) {
           stmt = prevStmt;
@@ -711,7 +708,7 @@ public class CassandraCQLClient extends DB {
       
       cql.append("COMMIT TRANSACTION;");
       
-      if (debug) {
+      if (logger.isDebugEnabled()) {
         logger.debug("Executing transaction CQL: {}", cql.toString());
       }
       
