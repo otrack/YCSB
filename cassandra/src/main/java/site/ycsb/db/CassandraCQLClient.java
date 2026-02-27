@@ -188,7 +188,8 @@ public class CassandraCQLClient extends DB {
             // access local but not remote
             .withInt(DefaultDriverOption.CONNECTION_POOL_LOCAL_SIZE,
                 Runtime.getRuntime().availableProcessors())
-            .withInt(DefaultDriverOption.CONNECTION_POOL_REMOTE_SIZE, 0);
+            .withInt(DefaultDriverOption.CONNECTION_POOL_REMOTE_SIZE,
+                Runtime.getRuntime().availableProcessors());
 
         String maxConnections = getProperties().getProperty(MAX_CONNECTIONS_PROPERTY);
         if (maxConnections != null) {
