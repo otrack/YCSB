@@ -26,13 +26,13 @@ import static org.hamcrest.Matchers.nullValue;
 
 import com.google.common.collect.Sets;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
+import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
+import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
+import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
+import com.datastax.oss.driver.api.querybuilder.select.Select;
 import site.ycsb.ByteIterator;
 import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
@@ -46,6 +46,7 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 
+import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -64,7 +65,7 @@ public class CassandraCQLClientTest {
   private final static String DEFAULT_ROW_KEY = "user1";
 
   private CassandraCQLClient client;
-  private Session session;
+  private CqlSession session;
 
   @ClassRule
   public static CassandraCQLUnit cassandraUnit = new CassandraCQLUnit(
@@ -72,7 +73,14 @@ public class CassandraCQLClientTest {
 
   @Before
   public void setUp() throws Exception {
-    session = cassandraUnit.getSession();
+    // Open a driver v4 session for test assertions (separate from the client session)
+    session = CqlSession.builder()
+        .addContactPoint(new InetSocketAddress(HOST, PORT))
+        .withConfigLoader(DriverConfigLoader.programmaticBuilder()
+            .withClass(DefaultDriverOption.LOAD_BALANCING_POLICY_CLASS, LocalFirstLoadBalancingPolicy.class)
+            .build())
+        .withKeyspace("ycsb")
+        .build();
 
     Properties p = new Properties();
     p.setProperty("hosts", HOST);
@@ -93,14 +101,17 @@ public class CassandraCQLClientTest {
       client.cleanup();
     }
     client = null;
+    if (session != null) {
+      session.close();
+    }
+    session = null;
   }
 
   @After
   public void clearTable() throws Exception {
     // Clear the table so that each test starts fresh.
-    final Statement truncate = QueryBuilder.truncate(TABLE);
-    if (cassandraUnit != null) {
-      cassandraUnit.getSession().execute(truncate);
+    if (session != null) {
+      session.execute("TRUNCATE " + TABLE);
     }
   }
 
@@ -114,12 +125,11 @@ public class CassandraCQLClientTest {
 
   private void insertRow() {
     final String rowKey = DEFAULT_ROW_KEY;
-    Insert insertStmt = QueryBuilder.insertInto(TABLE);
-    insertStmt.value(CassandraCQLClient.YCSB_KEY, rowKey);
-
-    insertStmt.value("field0", "value1");
-    insertStmt.value("field1", "value2");
-    session.execute(insertStmt);
+    session.execute(QueryBuilder.insertInto(TABLE)
+        .value(CassandraCQLClient.YCSB_KEY, QueryBuilder.literal(rowKey))
+        .value("field0", QueryBuilder.literal("value1"))
+        .value("field1", QueryBuilder.literal("value2"))
+        .build());
   }
 
   @Test
@@ -167,15 +177,15 @@ public class CassandraCQLClientTest {
 
     // Verify result
     final Select selectStmt =
-        QueryBuilder.select("field0", "field1")
-            .from(TABLE)
-            .where(QueryBuilder.eq(CassandraCQLClient.YCSB_KEY, key))
+        QueryBuilder.selectFrom(TABLE)
+            .columns("field0", "field1")
+            .whereColumn(CassandraCQLClient.YCSB_KEY).isEqualTo(QueryBuilder.literal(key))
             .limit(1);
 
-    final ResultSet rs = session.execute(selectStmt);
+    final ResultSet rs = session.execute(selectStmt.build());
     final Row row = rs.one();
     assertThat(row, notNullValue());
-    assertThat(rs.isExhausted(), is(true));
+    assertThat(rs.one(), nullValue());
     assertThat(row.getString("field0"), is("value1"));
     assertThat(row.getString("field1"), is("value2"));
   }
@@ -194,15 +204,15 @@ public class CassandraCQLClientTest {
 
     // Verify result
     final Select selectStmt =
-        QueryBuilder.select("field0", "field1")
-            .from(TABLE)
-            .where(QueryBuilder.eq(CassandraCQLClient.YCSB_KEY, DEFAULT_ROW_KEY))
+        QueryBuilder.selectFrom(TABLE)
+            .columns("field0", "field1")
+            .whereColumn(CassandraCQLClient.YCSB_KEY).isEqualTo(QueryBuilder.literal(DEFAULT_ROW_KEY))
             .limit(1);
 
-    final ResultSet rs = session.execute(selectStmt);
+    final ResultSet rs = session.execute(selectStmt.build());
     final Row row = rs.one();
     assertThat(row, notNullValue());
-    assertThat(rs.isExhausted(), is(true));
+    assertThat(rs.one(), nullValue());
     assertThat(row.getString("field0"), is("new-value1"));
     assertThat(row.getString("field1"), is("new-value2"));
   }
@@ -216,12 +226,12 @@ public class CassandraCQLClientTest {
 
     // Verify result
     final Select selectStmt =
-        QueryBuilder.select("field0", "field1")
-            .from(TABLE)
-            .where(QueryBuilder.eq(CassandraCQLClient.YCSB_KEY, DEFAULT_ROW_KEY))
+        QueryBuilder.selectFrom(TABLE)
+            .columns("field0", "field1")
+            .whereColumn(CassandraCQLClient.YCSB_KEY).isEqualTo(QueryBuilder.literal(DEFAULT_ROW_KEY))
             .limit(1);
 
-    final ResultSet rs = session.execute(selectStmt);
+    final ResultSet rs = session.execute(selectStmt.build());
     final Row row = rs.one();
     assertThat(row, nullValue());
   }
