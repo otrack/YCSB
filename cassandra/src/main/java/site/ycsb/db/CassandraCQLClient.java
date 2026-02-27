@@ -176,8 +176,15 @@ public class CassandraCQLClient extends DB {
             DEFAULT_USE_SSL_CONNECTION));
 
         // Build programmatic driver configuration
+        // Store contact points in config so that LocalFirstLoadBalancingPolicy
+        // can detect the local datacenter from them.
+        List<String> contactPointStrings = new ArrayList<>();
+        for (String h : hosts) {
+          contactPointStrings.add(h + ":" + port);
+        }
         ProgrammaticDriverConfigLoaderBuilder configBuilder = DriverConfigLoader.programmaticBuilder()
             .withClass(DefaultDriverOption.LOAD_BALANCING_POLICY_CLASS, LocalFirstLoadBalancingPolicy.class)
+            .withStringList(DefaultDriverOption.CONTACT_POINTS, contactPointStrings)
             // access local but not remote
             .withInt(DefaultDriverOption.CONNECTION_POOL_LOCAL_SIZE,
                 Runtime.getRuntime().availableProcessors())
