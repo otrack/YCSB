@@ -111,7 +111,7 @@ public class CassandraCQLClient extends DB {
       "cassandra.readtimeoutmillis";
 
   public static final String TRACING_PROPERTY = "cassandra.tracing";
-  public static final String TRACING_PROPERTY_DEFAULT = "true";
+  public static final String TRACING_PROPERTY_DEFAULT = "false";
 
   public static final String USE_SSL_CONNECTION = "cassandra.useSSL";
   private static final String DEFAULT_USE_SSL_CONNECTION = "false";
