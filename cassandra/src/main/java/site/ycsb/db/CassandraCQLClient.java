@@ -25,7 +25,6 @@ import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
 import com.datastax.oss.driver.api.core.config.ProgrammaticDriverConfigLoaderBuilder;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.BoundStatementBuilder;
-import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
 import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
@@ -333,9 +332,9 @@ public class CassandraCQLClient extends DB {
       }
       ColumnDefinitions cd = row.getColumnDefinitions();
 
-      for (ColumnDefinition def : cd) {
-        String name = def.getName().asInternal();
-        ByteBuffer val = row.getBytesUnsafe(name);
+      for (int i = 0; i < cd.size(); i++) {
+        String name = cd.get(i).getName().asInternal();
+        ByteBuffer val = row.getBytesUnsafe(i);
         if (val != null) {
           result.put(name, new ByteArrayByteIterator(val.array()));
         } else {
@@ -419,9 +418,9 @@ public class CassandraCQLClient extends DB {
 
         ColumnDefinitions cd = row.getColumnDefinitions();
 
-        for (ColumnDefinition def : cd) {
-          String name = def.getName().asInternal();
-          ByteBuffer val = row.getBytesUnsafe(name);
+        for (int i = 0; i < cd.size(); i++) {
+          String name = cd.get(i).getName().asInternal();
+          ByteBuffer val = row.getBytesUnsafe(i);
           if (val != null) {
             tuple.put(name, new ByteArrayByteIterator(val.array()));
           } else {

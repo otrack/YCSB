@@ -47,6 +47,7 @@ public class LocalFirstLoadBalancingPolicy implements LoadBalancingPolicy {
 
   /**
    * Required constructor for driver v4 policies loaded via configuration.
+   * Actual initialization happens in {@link #init(Map, DistanceReporter)}.
    */
   public LocalFirstLoadBalancingPolicy(DriverContext context, String profileName) {
   }
