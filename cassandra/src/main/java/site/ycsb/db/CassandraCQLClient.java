@@ -234,10 +234,12 @@ public class CassandraCQLClient extends DB {
             metadata.getClusterName().orElse("unknown"));
 
         for (Node node : metadata.getNodes().values()) {
-          logger.info("Datacenter: {}; Host: {}; Rack: {}\n",
+          logger.info("Datacenter: {}; Host: {}; Rack: {}; Distance: {}\n",
               node.getDatacenter(),
               node.getEndPoint().toString(),
-              node.getRack());
+              node.getRack(),
+              node.getDistance()
+          );
         }
 
       } catch (Exception e) {
