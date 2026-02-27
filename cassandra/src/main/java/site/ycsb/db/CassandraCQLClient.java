@@ -183,6 +183,8 @@ public class CassandraCQLClient extends DB {
           contactPointStrings.add(h + ":" + port);
         }
         ProgrammaticDriverConfigLoaderBuilder configBuilder = DriverConfigLoader.programmaticBuilder()
+            .withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofSeconds(10))
+            //
             .withClass(DefaultDriverOption.LOAD_BALANCING_POLICY_CLASS, LocalFirstLoadBalancingPolicy.class)
             .withStringList(DefaultDriverOption.CONTACT_POINTS, contactPointStrings)
             // access local but not remote
