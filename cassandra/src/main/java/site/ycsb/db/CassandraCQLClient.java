@@ -355,7 +355,6 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
 
     } catch (Exception e) {
-      e.printStackTrace();
       logger.error(MessageFormatter.format("Error reading key: {}", key).getMessage(), e);
       return Status.ERROR;
     }
@@ -522,7 +521,6 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      e.printStackTrace();
       logger.error(MessageFormatter.format("Error updating key: {}", key).getMessage(), e);
     }
 
@@ -604,7 +602,6 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      e.printStackTrace();
       logger.error(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
     }
 
