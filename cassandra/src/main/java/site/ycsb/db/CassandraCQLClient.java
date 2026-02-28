@@ -51,7 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Cassandra 2.x CQL client.
+ * Cassandra 4.x CQL client.
  *
  * See {@code cassandra2/README.md} for details.
  *
@@ -183,7 +183,7 @@ public class CassandraCQLClient extends DB {
           contactPointStrings.add(h + ":" + port);
         }
         ProgrammaticDriverConfigLoaderBuilder configBuilder = DriverConfigLoader.programmaticBuilder()
-            .withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofSeconds(10))
+            .withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofSeconds(2))
             //
             .withClass(DefaultDriverOption.LOAD_BALANCING_POLICY_CLASS, LocalFirstLoadBalancingPolicy.class)
             .withStringList(DefaultDriverOption.CONTACT_POINTS, contactPointStrings)
@@ -357,7 +357,8 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
 
     } catch (Exception e) {
-      logger.error(MessageFormatter.format("Error reading key: {}", key).getMessage(), e);
+      if (logger.isDebugEnabled())
+        logger.debug(MessageFormatter.format("Error reading key: {}", key).getMessage(), e);
       return Status.ERROR;
     }
 
@@ -445,8 +446,8 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
 
     } catch (Exception e) {
-      logger.error(
-          MessageFormatter.format("Error scanning with startkey: {}", startkey).getMessage(), e);
+      if (logger.isDebugEnabled())
+        logger.debug(MessageFormatter.format("Error scanning with startkey: {}", startkey).getMessage(), e);
       return Status.ERROR;
     }
 
@@ -523,7 +524,8 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      logger.error(MessageFormatter.format("Error updating key: {}", key).getMessage(), e);
+      if (logger.isDebugEnabled())
+        logger.debug(MessageFormatter.format("Error updating key: {}", key).getMessage(), e);
     }
 
     return Status.ERROR;
@@ -604,7 +606,8 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      logger.error(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
+      if (logger.isDebugEnabled())
+        logger.debug(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
     }
 
     return Status.ERROR;
@@ -649,7 +652,8 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      logger.error(MessageFormatter.format("Error deleting key: {}", key).getMessage(), e);
+      if (logger.isDebugEnabled())
+        logger.debug(MessageFormatter.format("Error deleting key: {}", key).getMessage(), e);
     }
 
     return Status.ERROR;
@@ -724,7 +728,8 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
       
     } catch (Exception e) {
-      logger.error("Error in transfer operation", e);
+      if (logger.isDebugEnabled())
+        logger.debug("Error in transfer operation", e);
       return Status.ERROR;
     }
   }
