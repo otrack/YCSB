@@ -357,8 +357,9 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
 
     } catch (Exception e) {
-      if (logger.isDebugEnabled())
+      if (logger.isDebugEnabled()) {
         logger.debug(MessageFormatter.format("Error reading key: {}", key).getMessage(), e);
+      }
       return Status.ERROR;
     }
 
@@ -446,8 +447,9 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
 
     } catch (Exception e) {
-      if (logger.isDebugEnabled())
+      if (logger.isDebugEnabled()) {
         logger.debug(MessageFormatter.format("Error scanning with startkey: {}", startkey).getMessage(), e);
+      }
       return Status.ERROR;
     }
 
@@ -524,8 +526,9 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      if (logger.isDebugEnabled())
+      if (logger.isDebugEnabled()) {
         logger.debug(MessageFormatter.format("Error updating key: {}", key).getMessage(), e);
+      }
     }
 
     return Status.ERROR;
@@ -606,8 +609,9 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      if (logger.isDebugEnabled())
+      if (logger.isDebugEnabled()) {
         logger.debug(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
+      }
     }
 
     return Status.ERROR;
@@ -652,8 +656,9 @@ public class CassandraCQLClient extends DB {
 
       return Status.OK;
     } catch (Exception e) {
-      if (logger.isDebugEnabled())
+      if (logger.isDebugEnabled()) {
         logger.debug(MessageFormatter.format("Error deleting key: {}", key).getMessage(), e);
+      }
     }
 
     return Status.ERROR;
@@ -728,8 +733,9 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
       
     } catch (Exception e) {
-      if (logger.isDebugEnabled())
+      if (logger.isDebugEnabled()) {
         logger.debug("Error in transfer operation", e);
+      }
       return Status.ERROR;
     }
   }
