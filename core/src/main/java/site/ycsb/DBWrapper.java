@@ -38,6 +38,11 @@ public class DBWrapper extends DB {
   private boolean reportLatencyForEachError = false;
   private Set<String> latencyTrackedErrors = new HashSet<String>();
 
+  public static final String TRACING_PROPERTY = "db.tracing";
+  public static final String TRACING_PROPERTY_DEFAULT = "false";
+
+  private boolean tracingEnabled = false;
+
   private static final String REPORT_LATENCY_FOR_EACH_ERROR_PROPERTY = "reportlatencyforeacherror";
   private static final String REPORT_LATENCY_FOR_EACH_ERROR_PROPERTY_DEFAULT = "false";
 
@@ -90,6 +95,9 @@ public class DBWrapper extends DB {
   public void init() throws DBException {
     try (final TraceScope span = tracer.newScope(scopeStringInit)) {
       db.init();
+
+      this.tracingEnabled = Boolean.parseBoolean(getProperties().
+          getProperty(TRACING_PROPERTY, TRACING_PROPERTY_DEFAULT));
 
       this.reportLatencyForEachError = Boolean.parseBoolean(getProperties().
           getProperty(REPORT_LATENCY_FOR_EACH_ERROR_PROPERTY,

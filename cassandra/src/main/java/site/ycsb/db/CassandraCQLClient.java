@@ -26,10 +26,13 @@ import com.datastax.oss.driver.api.core.config.ProgrammaticDriverConfigLoaderBui
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.BoundStatementBuilder;
 import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
+import com.datastax.oss.driver.api.core.cql.ExecutionInfo;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.QueryTrace;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.SimpleStatement;
+import com.datastax.oss.driver.api.core.cql.TraceEvent;
 import com.datastax.oss.driver.api.core.metadata.Metadata;
 import com.datastax.oss.driver.api.core.metadata.Node;
 import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
@@ -110,7 +113,7 @@ public class CassandraCQLClient extends DB {
   public static final String READ_TIMEOUT_MILLIS_PROPERTY =
       "cassandra.readtimeoutmillis";
 
-  public static final String TRACING_PROPERTY = "cassandra.tracing";
+  public static final String TRACING_PROPERTY = "db.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
 
   public static final String USE_SSL_CONNECTION = "cassandra.useSSL";
@@ -354,6 +357,9 @@ public class CassandraCQLClient extends DB {
         }
       }
 
+      if (trace) {
+        outputTrace(rs);
+      }
       return Status.OK;
 
     } catch (Exception e) {
@@ -444,6 +450,9 @@ public class CassandraCQLClient extends DB {
         result.add(tuple);
       }
 
+      if (trace) {
+        outputTrace(rs);
+      }
       return Status.OK;
 
     } catch (Exception e) {
@@ -522,8 +531,11 @@ public class CassandraCQLClient extends DB {
         builder.setTracing(true);
       }
 
-      session.execute(builder.build());
+      ResultSet updateRs = session.execute(builder.build());
 
+      if (trace) {
+        outputTrace(updateRs);
+      }
       return Status.OK;
     } catch (Exception e) {
       if (logger.isDebugEnabled()) {
@@ -605,8 +617,11 @@ public class CassandraCQLClient extends DB {
         builder.setTracing(true);
       }
 
-      session.execute(builder.build());
+      ResultSet insertRs = session.execute(builder.build());
 
+      if (trace) {
+        outputTrace(insertRs);
+      }
       return Status.OK;
     } catch (Exception e) {
       if (logger.isDebugEnabled()) {
@@ -652,8 +667,11 @@ public class CassandraCQLClient extends DB {
       if (trace) {
         bound = bound.setTracing(true);
       }
-      session.execute(bound);
+      ResultSet deleteRs = session.execute(bound);
 
+      if (trace) {
+        outputTrace(deleteRs);
+      }
       return Status.OK;
     } catch (Exception e) {
       if (logger.isDebugEnabled()) {
@@ -728,8 +746,15 @@ public class CassandraCQLClient extends DB {
       }
       
       // Execute the hand-written transaction as a single statement
-      session.execute(cql.toString());
-      
+      SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
+      if (trace) {
+        txnStmt = txnStmt.setTracing(true);
+      }
+      ResultSet transferRs = session.execute(txnStmt);
+
+      if (trace) {
+        outputTrace(transferRs);
+      }
       return Status.OK;
       
     } catch (Exception e) {
@@ -750,6 +775,25 @@ public class CassandraCQLClient extends DB {
     }
     // Allow alphanumeric characters, underscores, and hyphens
     return identifier.matches("^[a-zA-Z0-9_-]+$");
+  }
+
+  /**
+   * Outputs the query trace from a ResultSet to stdout.
+   */
+  private void outputTrace(ResultSet rs) {
+    ExecutionInfo ei = rs.getExecutionInfo();
+    QueryTrace qt = ei.getQueryTrace();
+    if (qt != null) {
+      System.out.println("Trace ID: " + qt.getTracingId()
+          + ", type: " + qt.getRequestType()
+          + ", duration: " + qt.getDurationMicros() + "us");
+      for (TraceEvent event : qt.getEvents()) {
+        System.out.println("  [" + event.getTimestamp() + "] "
+            + event.getActivity() + " @ " + event.getSource());
+      }
+    } else {
+      System.out.println("Tracing enabled but no trace data available.");
+    }
   }
 
 }

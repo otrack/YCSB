@@ -82,6 +82,10 @@ public class JdbcDBClient extends DB {
   /** The field name prefix in the table. */
   public static final String COLUMN_PREFIX = "FIELD";
 
+  /** The tracing property (shared with DBWrapper). */
+  public static final String TRACING_PROPERTY = "db.tracing";
+  public static final String TRACING_PROPERTY_DEFAULT = "false";
+
   /** SQL:2008 standard: FETCH FIRST n ROWS after the ORDER BY. */
   private boolean sqlansiScans = false;
   /** SQL Server before 2012: TOP n after the SELECT. */
@@ -243,6 +247,19 @@ public class JdbcDBClient extends DB {
       cachedStatements = new ConcurrentHashMap<StatementType, PreparedStatement>();
 
       this.dbFlavor = DBFlavor.fromJdbcUrl(urlArr[0]);
+
+      boolean tracingEnabled = getBoolProperty(props, TRACING_PROPERTY,
+          Boolean.parseBoolean(TRACING_PROPERTY_DEFAULT));
+      if (tracingEnabled) {
+        this.dbFlavor.setTracingEnabled(true);
+        for (Connection conn : conns) {
+          try {
+            this.dbFlavor.activateTracing(conn);
+          } catch (SQLException e) {
+            System.err.println("Error activating tracing: " + e);
+          }
+        }
+      }
     } catch (ClassNotFoundException e) {
       System.err.println("Error in initializing the JDBS driver: " + e);
       throw new DBException(e);
@@ -274,6 +291,15 @@ public class JdbcDBClient extends DB {
     }
 
     try {
+      if (dbFlavor.isTracingEnabled()) {
+        for (Connection conn : conns) {
+          try {
+            dbFlavor.outputAggregatedStats(conn);
+          } catch (SQLException e) {
+            System.err.println("Error outputting aggregated stats: " + e);
+          }
+        }
+      }
       cleanupAllConnections();
     } catch (SQLException e) {
       System.err.println("Error in closing the connection. " + e);
@@ -424,6 +450,9 @@ public class JdbcDBClient extends DB {
         }
       }
       resultSet.close();
+      if (dbFlavor.isTracingEnabled()) {
+        dbFlavor.outputTraceResult(getShardConnectionByKey(key));
+      }
       return Status.OK;
     } catch (SQLException e) {
       System.err.println("Error in processing read of table " + tableName + ": " + e);
@@ -461,6 +490,9 @@ public class JdbcDBClient extends DB {
         }
       }
       resultSet.close();
+      if (dbFlavor.isTracingEnabled()) {
+        dbFlavor.outputTraceResult(getShardConnectionByKey(startKey));
+      }
       return Status.OK;
     } catch (SQLException e) {
       System.err.println("Error in processing scan of table: " + tableName + e);
@@ -486,6 +518,9 @@ public class JdbcDBClient extends DB {
       updateStatement.setString(index, key);
       int result = updateStatement.executeUpdate();
       if (result == 1) {
+        if (dbFlavor.isTracingEnabled()) {
+          dbFlavor.outputTraceResult(getShardConnectionByKey(key));
+        }
         return Status.OK;
       }
       return Status.UNEXPECTED_STATE;
@@ -529,6 +564,9 @@ public class JdbcDBClient extends DB {
             if (!autoCommit) {
               getShardConnectionByKey(key).commit();
             }
+            if (dbFlavor.isTracingEnabled()) {
+              dbFlavor.outputTraceResult(getShardConnectionByKey(key));
+            }
             return Status.OK;
           } // else, the default value of -1 or a nonsense. Treat it as an infinitely large batch.
         } // else, we let the batch accumulate
@@ -546,6 +584,9 @@ public class JdbcDBClient extends DB {
               getShardConnectionByKey(key).commit();
             }
             // uhh
+            if (dbFlavor.isTracingEnabled()) {
+              dbFlavor.outputTraceResult(getShardConnectionByKey(key));
+            }
             return Status.OK;
           } else {
             // Commit each update
@@ -553,6 +594,9 @@ public class JdbcDBClient extends DB {
           }
         }
         if (result == 1) {
+          if (dbFlavor.isTracingEnabled()) {
+            dbFlavor.outputTraceResult(getShardConnectionByKey(key));
+          }
           return Status.OK;
         }
       }
@@ -574,6 +618,9 @@ public class JdbcDBClient extends DB {
       deleteStatement.setString(1, key);
       int result = deleteStatement.executeUpdate();
       if (result == 1) {
+        if (dbFlavor.isTracingEnabled()) {
+          dbFlavor.outputTraceResult(getShardConnectionByKey(key));
+        }
         return Status.OK;
       }
       return Status.UNEXPECTED_STATE;
@@ -636,7 +683,10 @@ public class JdbcDBClient extends DB {
         conn.commit();
         conn.setAutoCommit(wasAutoCommit);
       }
-      
+
+      if (success && dbFlavor.isTracingEnabled()) {
+        dbFlavor.outputTraceResult(conn);
+      }
       return success ? Status.OK : Status.UNEXPECTED_STATE;
       
     } catch (SQLException | NumberFormatException e) {
