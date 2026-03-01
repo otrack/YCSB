@@ -31,9 +31,18 @@ public abstract class DBFlavor {
   }
 
   private final DBName dbName;
+  private boolean tracingEnabled = false;
 
   public DBFlavor(DBName dbName) {
     this.dbName = dbName;
+  }
+
+  public boolean isTracingEnabled() {
+    return tracingEnabled;
+  }
+
+  public void setTracingEnabled(boolean enabled) {
+    this.tracingEnabled = enabled;
   }
 
   public static DBFlavor fromJdbcUrl(String url) {
@@ -101,5 +110,29 @@ public abstract class DBFlavor {
    */
   public boolean supportsOptimizedTransfer() {
     return false;
+  }
+
+  /**
+   * Activate tracing on the given connection (e.g., SET tracing = 'kv' for CockroachDB).
+   * Default implementation is a no-op.
+   */
+  public void activateTracing(java.sql.Connection conn) throws java.sql.SQLException {
+    // no-op by default
+  }
+
+  /**
+   * Output the trace result for the most recent operation on the given connection.
+   * Default implementation is a no-op.
+   */
+  public void outputTraceResult(java.sql.Connection conn) throws java.sql.SQLException {
+    // no-op by default
+  }
+
+  /**
+   * Output aggregated statement statistics (e.g., from crdb_internal.cluster_statement_statistics).
+   * Default implementation is a no-op.
+   */
+  public void outputAggregatedStats(java.sql.Connection conn) throws java.sql.SQLException {
+    // no-op by default
   }
 }

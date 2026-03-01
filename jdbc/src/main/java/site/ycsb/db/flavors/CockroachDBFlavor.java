@@ -16,6 +16,11 @@
  */
 package site.ycsb.db.flavors;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Statement;
 import site.ycsb.db.JdbcDBClient;
 
 /**
@@ -53,5 +58,71 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
     sql.append("SELECT COUNT(*) AS affected_rows FROM update_rows");
     
     return sql.toString();
+  }
+
+  @Override
+  public void activateTracing(Connection conn) throws SQLException {
+    try (Statement stmt = conn.createStatement()) {
+      stmt.execute("SET tracing = 'kv'");
+    }
+  }
+
+  @Override
+  public void outputTraceResult(Connection conn) throws SQLException {
+    try (Statement stmt = conn.createStatement();
+         ResultSet rs = stmt.executeQuery("SHOW TRACE FOR SESSION")) {
+      printToStdout(rs);
+    }
+    // Reset trace buffer for the next operation
+    try (Statement stmt = conn.createStatement()) {
+      stmt.execute("SET tracing = off");
+      stmt.execute("SET tracing = 'kv'");
+    }
+  }
+
+  @Override
+  public void outputAggregatedStats(Connection conn) throws SQLException {
+    try (Statement stmt = conn.createStatement();
+         ResultSet rs = stmt.executeQuery("SELECT * FROM crdb_internal.cluster_statement_statistics")) {
+      ResultSetMetaData meta = rs.getMetaData();
+      int cols = meta.getColumnCount();
+      System.out.println("=== CockroachDB Aggregated Statement Statistics ===");
+      while (rs.next()) {
+        StringBuilder row = new StringBuilder();
+        for (int i = 1; i <= cols; i++) {
+          if (i > 1) {
+            row.append(", ");
+          }
+          row.append(meta.getColumnName(i)).append("=").append(rs.getString(i));
+        }
+        System.out.println(row.toString());
+      }
+    }
+  }
+
+  public static void printToStdout(ResultSet rs) throws SQLException {
+    ResultSetMetaData md = rs.getMetaData();
+    int cols = md.getColumnCount();
+
+    // header
+    for (int i = 1; i <= cols; i++) {
+      if (i > 1) {
+        System.out.print("\t");
+      }
+      System.out.print(md.getColumnLabel(i));
+    }
+    System.out.println();
+
+    // rows
+    while (rs.next()) {
+      for (int i = 1; i <= cols; i++) {
+        if (i > 1) {
+          System.out.print("\t");
+        }
+        Object v = rs.getObject(i);
+        System.out.print(v == null ? "NULL" : v.toString());
+      }
+      System.out.println();
+    }
   }
 }
