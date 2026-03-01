@@ -34,6 +34,8 @@ LICENSE file.
   <properties>
     <!-- Skip tests by default. will be activated by jdk8 profile -->
     <skipTests>true</skipTests>
+    <tinkerpop.version>3.5.6</tinkerpop.version>
+    <esri.version>1.2.1</esri.version>
   </properties>
 
   <dependencies>
@@ -47,6 +49,17 @@ LICENSE file.
       <groupId>org.apache.cassandra</groupId>
       <artifactId>java-driver-query-builder</artifactId>
       <version>4.19.2</version>
+    </dependency>
+    <!-- Optional transitive dependencies of the OSS Datastax driver -->
+    <dependency>
+      <groupId>com.esri.geometry</groupId>
+      <artifactId>esri-geometry-api</artifactId>
+      <version>${esri.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.tinkerpop</groupId>
+      <artifactId>gremlin-core</artifactId>
+      <version>${tinkerpop.version}</version>
     </dependency>
     <dependency>
       <groupId>site.ycsb</groupId>
