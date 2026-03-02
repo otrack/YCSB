@@ -747,9 +747,12 @@ public class CassandraCQLClient extends DB {
       
       // Execute the hand-written transaction as a single statement
       SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
+      txnStmt = txnStmt.setTimeout(Duration.ofMillis(500)).setConsistencyLevel(writeConsistencyLevel);
+
       if (trace) {
         txnStmt = txnStmt.setTracing(true);
       }
+
       ResultSet transferRs = session.execute(txnStmt);
 
       if (trace) {
