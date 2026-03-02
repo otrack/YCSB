@@ -647,18 +647,12 @@ public class JdbcDBClient extends DB {
     }
 
     Connection conn = null;
-    boolean wasAutoCommit = autoCommit;
     PreparedStatement stmt = null;
     ResultSet rs = null;
     try {
       // Both keys are on the same shard, use that connection
       conn = getShardConnectionByKey(key1);
-      
-      // Start transaction if not already in one
-      if (!inTransaction) {
-        conn.setAutoCommit(false);
-      }
-      
+
       // Execute the flavor-provided transfer statement
       stmt = conn.prepareStatement(transferStmt);
       
@@ -670,18 +664,12 @@ public class JdbcDBClient extends DB {
       
       // Execute the statement
       rs = stmt.executeQuery();
-      
+
       // Check if the transfer was successful
       boolean success = false;
       if (rs.next()) {
         int affectedRows = rs.getInt("affected_rows");
         success = (affectedRows == 2); // Both updates should succeed
-      }
-      
-      // Commit if we started the transaction
-      if (!inTransaction) {
-        conn.commit();
-        conn.setAutoCommit(wasAutoCommit);
       }
 
       if (success && dbFlavor.isTracingEnabled()) {
@@ -691,14 +679,6 @@ public class JdbcDBClient extends DB {
       
     } catch (SQLException | NumberFormatException e) {
       System.err.println("Error in processing transfer on table: " + tableName + " - " + e);
-      try {
-        if (conn != null && !inTransaction) {
-          conn.rollback();
-          conn.setAutoCommit(wasAutoCommit);
-        }
-      } catch (SQLException ex) {
-        System.err.println("Error rolling back transfer: " + ex);
-      }
       return Status.ERROR;
     } finally {
       // Clean up resources

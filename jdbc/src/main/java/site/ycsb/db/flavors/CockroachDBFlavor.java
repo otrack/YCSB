@@ -48,8 +48,8 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
     sql.append("WITH update_rows AS (");
     sql.append("UPDATE ").append(tableName);
     sql.append(" SET ").append(field).append(" = CASE");
-    sql.append(" WHEN ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? THEN ").append(field).append(" - 1");
-    sql.append(" WHEN ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? THEN ").append(field).append(" + 1");
+    sql.append(" WHEN ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? THEN ").append(field);
+    sql.append(" WHEN ").append(JdbcDBClient.PRIMARY_KEY).append(" = ? THEN ").append(field);
     sql.append(" ELSE ").append(field);
     sql.append(" END");
     sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" IN (?, ?)");
