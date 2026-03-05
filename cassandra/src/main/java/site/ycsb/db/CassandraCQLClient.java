@@ -17,7 +17,6 @@
  */
 package site.ycsb.db;
 
-import com.datastax.oss.driver.api.core.ConsistencyLevel;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.CqlSessionBuilder;
 import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
@@ -248,8 +247,9 @@ public class CassandraCQLClient extends DB {
         }
 
         if (writeConsistencyLevel != DefaultConsistencyLevel.SERIAL
-            || readConsistencyLevel != DefaultConsistencyLevel.SERIAL)
+            || readConsistencyLevel != DefaultConsistencyLevel.SERIAL) {
           throw new IllegalArgumentException("Invalid consistency levels");
+        }
 
       } catch (Exception e) {
         throw new DBException(e);
