@@ -17,22 +17,14 @@
  */
 package site.ycsb.db;
 
+import com.datastax.oss.driver.api.core.ConsistencyLevel;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.CqlSessionBuilder;
 import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
 import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
 import com.datastax.oss.driver.api.core.config.ProgrammaticDriverConfigLoaderBuilder;
-import com.datastax.oss.driver.api.core.cql.BoundStatement;
-import com.datastax.oss.driver.api.core.cql.BoundStatementBuilder;
-import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
-import com.datastax.oss.driver.api.core.cql.ExecutionInfo;
-import com.datastax.oss.driver.api.core.cql.PreparedStatement;
-import com.datastax.oss.driver.api.core.cql.QueryTrace;
-import com.datastax.oss.driver.api.core.cql.ResultSet;
-import com.datastax.oss.driver.api.core.cql.Row;
-import com.datastax.oss.driver.api.core.cql.SimpleStatement;
-import com.datastax.oss.driver.api.core.cql.TraceEvent;
+import com.datastax.oss.driver.api.core.cql.*;
 import com.datastax.oss.driver.api.core.metadata.Metadata;
 import com.datastax.oss.driver.api.core.metadata.Node;
 import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
@@ -255,6 +247,10 @@ public class CassandraCQLClient extends DB {
           );
         }
 
+        if (writeConsistencyLevel != DefaultConsistencyLevel.SERIAL
+            || readConsistencyLevel != DefaultConsistencyLevel.SERIAL)
+          throw new IllegalArgumentException("Invalid consistency levels");
+
       } catch (Exception e) {
         throw new DBException(e);
       }
@@ -320,7 +316,11 @@ public class CassandraCQLClient extends DB {
               .whereColumn(YCSB_KEY).isEqualTo(QueryBuilder.bindMarker());
         }
 
-        stmt = session.prepare(select.build().setConsistencyLevel(readConsistencyLevel));
+        stmt = session.prepare(
+          select.build()
+              .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+              .setConsistencyLevel(DefaultConsistencyLevel.QUORUM)
+        );
 
         PreparedStatement prevStmt = (fields == null) ?
                                      readAllStmt.getAndSet(stmt) :
@@ -410,7 +410,8 @@ public class CassandraCQLClient extends DB {
         cql += " WHERE token(" + YCSB_KEY + ") >= token(?) LIMIT ?";
 
         stmt = session.prepare(SimpleStatement.newInstance(cql)
-            .setConsistencyLevel(readConsistencyLevel));
+            .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+            .setConsistencyLevel(DefaultConsistencyLevel.QUORUM));
 
         PreparedStatement prevStmt = (fields == null) ?
                                      scanAllStmt.getAndSet(stmt) :
@@ -494,13 +495,11 @@ public class CassandraCQLClient extends DB {
         }
         updateCQL.append(String.join(", ", setterList));
         updateCQL.append(" WHERE ").append(YCSB_KEY).append(" = ?");
-        if (writeConsistencyLevel == DefaultConsistencyLevel.SERIAL) {
-          // serializable updates require a "conditional if"
-          updateCQL.append(" IF ").append(FIELD0).append(" != 'test'");
-        }
+        updateCQL.append(" IF ").append(FIELD0).append(" != 'test'");
 
         stmt = session.prepare(SimpleStatement.newInstance(updateCQL.toString())
-            .setConsistencyLevel(writeConsistencyLevel));
+            .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+            .setConsistencyLevel(DefaultConsistencyLevel.QUORUM));
 
         PreparedStatement prevStmt = updateStmts.putIfAbsent(new HashSet(fields), stmt);
         if (prevStmt != null) {
@@ -581,13 +580,12 @@ public class CassandraCQLClient extends DB {
         insertCQL.append(String.join(", ", cols))
             .append(") VALUES (")
             .append(String.join(", ", markers))
-            .append(")");
-        if (writeConsistencyLevel == DefaultConsistencyLevel.SERIAL) {
-          insertCQL.append(" IF NOT EXISTS");
-        }
+            .append(")")
+            .append(" IF NOT EXISTS");
 
         stmt = session.prepare(SimpleStatement.newInstance(insertCQL.toString())
-            .setConsistencyLevel(writeConsistencyLevel));
+            .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+            .setConsistencyLevel(DefaultConsistencyLevel.QUORUM));
 
         PreparedStatement prevStmt = insertStmts.putIfAbsent(new HashSet(fields), stmt);
         if (prevStmt != null) {
@@ -652,7 +650,8 @@ public class CassandraCQLClient extends DB {
         stmt = session.prepare(QueryBuilder.deleteFrom(table)
             .whereColumn(YCSB_KEY).isEqualTo(QueryBuilder.bindMarker())
             .build()
-            .setConsistencyLevel(writeConsistencyLevel));
+            .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+            .setConsistencyLevel(DefaultConsistencyLevel.QUORUM));
 
         PreparedStatement prevStmt = deleteStmt.getAndSet(stmt);
         if (prevStmt != null) {
@@ -747,7 +746,9 @@ public class CassandraCQLClient extends DB {
       
       // Execute the hand-written transaction as a single statement
       SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
-      txnStmt = txnStmt.setTimeout(Duration.ofMillis(500)).setConsistencyLevel(writeConsistencyLevel);
+      txnStmt = txnStmt.setTimeout(Duration.ofMillis(500))
+          .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+          .setConsistencyLevel(DefaultConsistencyLevel.QUORUM);
 
       if (trace) {
         txnStmt = txnStmt.setTracing(true);
