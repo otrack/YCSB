@@ -54,3 +54,20 @@ Fix tracing in the JDBC and Cassandra drivers.
 Currently, the JDBC driver does not output anything when CockroachDB is used.
 In Cassandra, when tracing is activated, some operations are failing.
 Also, please move the tracing property to DBWrapper because it is something common to several databases (even if for the moment, two databases support it).
+
+# 09.03 - copilot
+
+Your goal is to create a new synthetic workload that generalizes the closed economy one.
+The workload is implemented in the class site.ycsb.workloads.SwapWorkload.
+It uses a new parameter called swapsize, hereafter abbreviated in S.
+The workload relies on a new (read-modify-write) method called "swap" and implemented in site.ycsb.DB class.
+The logic of this operation is as follows:
+- Choose randomly S users (keys)
+- Let user[0], ..., user[S-1] be such users
+- For all the i in 0..S-1, replace user[i+1 mod S].field0 with user[i].field0
+The implementation of swap in site.ycsb.DB is the default, interactive, one.
+As with the transfer method, this method is called in DBWrapper and databases may propose a more efficient implementation.
+You already provide two efficient implemnentations:
+- one using the JDBC driver with the CockroachDB,
+- and another for Cassandra, using the Accord protocol.
+For both of these implementations, you should look at the code of transfer() which provide a good basis for implementiing efficiently the swap operation.

@@ -557,7 +557,7 @@ public class ClosedEconomyWorkload extends Workload {
     while (second == first) {
       second = nextKeyNum();
     }
-    // Order keys to prevent deadlocks
+    // Order keys to prevent deadlocks (in lock-based database systems)
     if (first > second) {
       long temp = first;
       first = second;
