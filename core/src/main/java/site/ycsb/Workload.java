@@ -46,7 +46,7 @@ public abstract class Workload {
    * runs normally but measurements are discarded. Default is 60 seconds (one minute).
    */
   public static final String WARMUP_EXECUTION_TIME = "warmupexecutiontime";
-  public static final String WARMUP_EXECUTION_TIME_DEFAULT = "60";
+  public static final String WARMUP_EXECUTION_TIME_DEFAULT = "0";
 
   private volatile AtomicBoolean stopRequested = new AtomicBoolean(false);
   
