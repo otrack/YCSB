@@ -1,0 +1,48 @@
+# Copyright (c) 2010 Yahoo! Inc. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you
+# may not use this file except in compliance with the License. You
+# may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied. See the License for the specific language governing
+# permissions and limitations under the License. See accompanying
+# LICENSE file.
+
+# Swap Workload
+# Workload SW: Swap Workload with cyclic rotation of field values among S users
+#   Application example: Generalised closed-economy workload with cyclic value rotation
+#
+#   Read/update/read-modify-write ratio: 0/0/100
+#   Default data size: Single field per record containing a numeric value
+#   Request distribution: uniform
+#   swapsize: number of users involved in each swap (default: 3)
+
+recordcount=1000
+operationcount=1000
+workload=site.ycsb.workloads.SwapWorkload
+
+# Number of users involved in each swap (S)
+swapsize=3
+
+# Transaction proportions
+readproportion=0
+updateproportion=0
+insertproportion=0
+scanproportion=0
+readmodifywriteproportion=1.0
+
+# Request distribution
+requestdistribution=uniform
+
+# Field configuration
+fieldcount=1
+readallfields=true
+writeallfields=false
+
+# Validation method
+validatebyquery=false

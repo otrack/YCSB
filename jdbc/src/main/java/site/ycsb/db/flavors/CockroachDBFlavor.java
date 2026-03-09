@@ -60,6 +60,62 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
     return sql.toString();
   }
 
+  /**
+   * Creates an efficient CTE-based SQL statement for the swap operation.
+   *
+   * <p>The statement reads all S values in a CTE, then updates each
+   * {@code keys[(i+1) % S]} with the value read from {@code keys[i]}.
+   *
+   * <p>Parameter binding order (total = 4*S parameters):
+   * <ol>
+   *   <li>keys[0], ..., keys[S-1]  — IN clause for the reads CTE
+   *   <li>for i in 0..S-1: keys[(i+1)%S], keys[i]  — CASE WHEN target = ? THEN (SELECT ... WHERE source = ?)
+   *   <li>keys[0], ..., keys[S-1]  — IN clause for the UPDATE WHERE
+   * </ol>
+   */
+  @Override
+  public String createSwapStatement(String tableName, String[] keys, String field) {
+    int s = keys.length;
+    StringBuilder sql = new StringBuilder();
+
+    // CTE 1: read all values
+    sql.append("WITH vals AS (");
+    sql.append("SELECT ").append(JdbcDBClient.PRIMARY_KEY).append(", ").append(field);
+    sql.append(" FROM ").append(tableName);
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" IN (");
+    for (int i = 0; i < s; i++) {
+      if (i > 0) {
+        sql.append(", ");
+      }
+      sql.append("?");
+    }
+    sql.append(")), ");
+
+    // CTE 2: update rows with cyclic rotation
+    sql.append("update_rows AS (");
+    sql.append("UPDATE ").append(tableName);
+    sql.append(" SET ").append(field).append(" = CASE");
+    for (int i = 0; i < s; i++) {
+      // keys[(i+1)%s] gets keys[i]'s value
+      sql.append(" WHEN ").append(JdbcDBClient.PRIMARY_KEY).append(" = ?");
+      sql.append(" THEN (SELECT ").append(field).append(" FROM vals WHERE ");
+      sql.append(JdbcDBClient.PRIMARY_KEY).append(" = ?)");
+    }
+    sql.append(" ELSE ").append(field);
+    sql.append(" END");
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" IN (");
+    for (int i = 0; i < s; i++) {
+      if (i > 0) {
+        sql.append(", ");
+      }
+      sql.append("?");
+    }
+    sql.append(") RETURNING 1) ");
+    sql.append("SELECT COUNT(*) AS affected_rows FROM update_rows");
+
+    return sql.toString();
+  }
+
   @Override
   public void activateTracing(Connection conn) throws SQLException {
     try (Statement stmt = conn.createStatement()) {
