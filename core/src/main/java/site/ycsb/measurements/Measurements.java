@@ -66,6 +66,13 @@ public class Measurements {
     return singleton;
   }
 
+  /**
+   * Resets the singleton Measurements object, discarding all previously collected data.
+   * This is used to clear measurements collected during a warm-up phase before the real run.
+   */
+  public static synchronized void reset() {
+    singleton = null;
+  }
   private final ConcurrentHashMap<String, OneMeasurement> opToMesurementMap;
   private final ConcurrentHashMap<String, OneMeasurement> opToIntendedMesurementMap;
   private final MeasurementType measurementType;

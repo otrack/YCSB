@@ -305,6 +305,17 @@ public final class Client {
 
     initWorkload(props, warningthread, workload, tracer);
 
+    // Warm-up phase: run the workload for warmupexecutiontime seconds without collecting measurements.
+    boolean dotransactions = Boolean.valueOf(props.getProperty(DO_TRANSACTIONS_PROPERTY, String.valueOf(true)));
+    long warmupExecutionTime = Long.parseLong(
+        props.getProperty(Workload.WARMUP_EXECUTION_TIME, Workload.WARMUP_EXECUTION_TIME_DEFAULT));
+
+    if (dotransactions && warmupExecutionTime > 0) {
+      runWarmup(props, dbname, threadcount, targetperthreadperms, workload, tracer, warmupExecutionTime);
+      Measurements.reset();
+      workload.resetStopRequested();
+    }
+
     System.err.println("Starting test.");
     final CountDownLatch completeLatch = new CountDownLatch(threadcount);
 
@@ -483,10 +494,44 @@ public final class Client {
     return HTraceConfiguration.fromMap(filteredProperties);
   }
 
+  /**
+   * Runs the warm-up phase: executes the workload for {@code warmupExecutionTime} seconds
+   * using separate client threads, then discards all collected measurements.
+   */
+  private static void runWarmup(Properties props, String dbname, int threadcount,
+                                double targetperthreadperms, Workload workload, Tracer tracer,
+                                long warmupExecutionTime) {
+    System.err.println("Starting warm-up period (" + warmupExecutionTime + " seconds).");
+    // Use opcount=0 so warm-up threads run until the TerminatorThread stops them.
+    Properties warmupProps = new Properties(props);
+    warmupProps.setProperty(OPERATION_COUNT_PROPERTY, "0");
+    final CountDownLatch warmupLatch = new CountDownLatch(threadcount);
+    final List<ClientThread> warmupClients = initDb(dbname, warmupProps, threadcount,
+        targetperthreadperms, workload, tracer, warmupLatch);
+
+    final Map<Thread, ClientThread> warmupThreads = new HashMap<>(threadcount);
+    for (ClientThread client : warmupClients) {
+      warmupThreads.put(new Thread(tracer.wrap(client, "ClientThread")), client);
+    }
+    for (Thread t : warmupThreads.keySet()) {
+      t.start();
+    }
+    Thread warmupTerminator = new TerminatorThread(warmupExecutionTime, warmupThreads.keySet(), workload);
+    warmupTerminator.start();
+    for (Thread t : warmupThreads.keySet()) {
+      try {
+        t.join();
+      } catch (InterruptedException ignored) {
+        // ignored
+      }
+    }
+    if (!warmupTerminator.isInterrupted()) {
+      warmupTerminator.interrupt();
+    }
+    System.err.println("Warm-up period complete. Resetting measurements.");
+  }
+
   private static Thread setupWarningThread() {
-    //show a warning message that creating the workload is taking a while
-    //but only do so if it is taking longer than 2 seconds
-    //(showing the message right away if the setup wasn't taking very long was confusing people)
     return new Thread() {
       @Override
       public void run() {
