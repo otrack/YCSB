@@ -38,9 +38,16 @@ import java.util.Properties;
 public abstract class Workload {
   public static final String INSERT_START_PROPERTY = "insertstart";
   public static final String INSERT_COUNT_PROPERTY = "insertcount";
-  
+
   public static final String INSERT_START_PROPERTY_DEFAULT = "0";
-  
+
+  /**
+   * The warm-up execution time in seconds. During the warm-up period the workload
+   * runs normally but measurements are discarded. Default is 60 seconds (one minute).
+   */
+  public static final String WARMUP_EXECUTION_TIME = "warmupexecutiontime";
+  public static final String WARMUP_EXECUTION_TIME_DEFAULT = "60";
+
   private volatile AtomicBoolean stopRequested = new AtomicBoolean(false);
   
   /** Operations available for a database. */
@@ -118,5 +125,12 @@ public abstract class Workload {
    */
   public boolean isStopRequested() {
     return stopRequested.get();
+  }
+
+  /**
+   * Resets the stop request flag so the workload can be restarted (e.g. after a warm-up phase).
+   */
+  public void resetStopRequested() {
+    stopRequested.set(false);
   }
 }
