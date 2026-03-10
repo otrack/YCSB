@@ -58,6 +58,7 @@ public class DBWrapper extends DB {
   private final String scopeStringScan;
   private final String scopeStringUpdate;
   private final String scopeStringTransfer;
+  private final String scopeStringSwap;
 
   public DBWrapper(final DB db, final Tracer tracer) {
     this.db = db;
@@ -72,6 +73,7 @@ public class DBWrapper extends DB {
     scopeStringScan = simple + "#scan";
     scopeStringUpdate = simple + "#update";
     scopeStringTransfer = simple + "#transfer";
+    scopeStringSwap = simple + "#swap";
   }
 
   /**
@@ -276,6 +278,28 @@ public class DBWrapper extends DB {
       long ist = measurements.getIntendedStartTimeNs();
       long st = System.nanoTime();
       Status res = db.transfer(table, key1, key2, field);
+      long en = System.nanoTime();
+      measure("TX-READMODIFYWRITE", res, ist, st, en);
+      measurements.reportStatus("TX-READMODIFYWRITE", res);
+      return res;
+    }
+  }
+
+  /**
+   * Swap operation for the swap workload.
+   * Performs a cyclic rotation of field values among the given keys:
+   * for each i in 0..S-1, keys[(i+1) % S].field is set to keys[i].field.
+   *
+   * @param table The name of the table
+   * @param keys  The record keys of the S users
+   * @param field The field name to rotate
+   * @return The result of the operation.
+   */
+  public Status swap(String table, String[] keys, String field) {
+    try (final TraceScope span = tracer.newScope(scopeStringSwap)) {
+      long ist = measurements.getIntendedStartTimeNs();
+      long st = System.nanoTime();
+      Status res = db.swap(table, keys, field);
       long en = System.nanoTime();
       measure("TX-READMODIFYWRITE", res, ist, st, en);
       measurements.reportStatus("TX-READMODIFYWRITE", res);

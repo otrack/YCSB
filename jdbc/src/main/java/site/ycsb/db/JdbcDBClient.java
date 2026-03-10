@@ -710,4 +710,76 @@ public class JdbcDBClient extends DB {
 
     return new OrderedFieldInfo(fieldKeys, fieldValues);
   }
+
+  /**
+   * Swap operation: cyclically rotates field values among S keys.
+   * For each i in 0..S-1, keys[(i+1) % S].field is set to keys[i].field.
+   */
+  @Override
+  public Status swap(String tableName, String[] keys, String field) {
+    // Check if the database flavor provides a custom swap statement
+    String swapStmt = dbFlavor.createSwapStatement(tableName, keys, field);
+
+    // If flavor returns null, use the default implementation from DB class
+    if (swapStmt == null) {
+      return super.swap(tableName, keys, field);
+    }
+
+    int s = keys.length;
+    Connection conn = null;
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+    try {
+      conn = getShardConnectionByKey(keys[0]);
+      stmt = conn.prepareStatement(swapStmt);
+
+      // Bind parameters for the swap statement.
+      // Expected parameter order (for a CTE-based swap):
+      //   1..s   : keys for the IN clause in the reads CTE
+      //   s+1..3s: for each i in 0..s-1: keys[(i+1)%s] (target), keys[i] (source) in the CASE WHEN
+      //   3s+1..4s: keys for the IN clause in the UPDATE WHERE
+      int paramIndex = 1;
+      // IN clause for reads CTE
+      for (int i = 0; i < s; i++) {
+        stmt.setString(paramIndex++, keys[i]);
+      }
+      // CASE WHEN expressions: target key = ?, source value from ?, for each i
+      for (int i = 0; i < s; i++) {
+        stmt.setString(paramIndex++, keys[(i + 1) % s]); // target key
+        stmt.setString(paramIndex++, keys[i]);            // source key
+      }
+      // IN clause for UPDATE WHERE
+      for (int i = 0; i < s; i++) {
+        stmt.setString(paramIndex++, keys[i]);
+      }
+
+      rs = stmt.executeQuery();
+
+      boolean success = false;
+      if (rs.next()) {
+        int affectedRows = rs.getInt("affected_rows");
+        success = (affectedRows == s);
+      }
+
+      if (success && dbFlavor.isTracingEnabled()) {
+        dbFlavor.outputTraceResult(conn);
+      }
+      return success ? Status.OK : Status.UNEXPECTED_STATE;
+
+    } catch (SQLException e) {
+      System.err.println("Error in processing swap on table: " + tableName + " - " + e);
+      return Status.ERROR;
+    } finally {
+      try {
+        if (rs != null) {
+          rs.close();
+        }
+        if (stmt != null) {
+          stmt.close();
+        }
+      } catch (SQLException e) {
+        System.err.println("Error closing resources: " + e);
+      }
+    }
+  }
 }

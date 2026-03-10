@@ -100,6 +100,24 @@ public abstract class DBFlavor {
     // Subclasses can override to provide database-specific implementations
     return null;
   }
+
+  /**
+   * Create and return a SQL statement for the swap operation among S keys.
+   * This allows database-specific optimizations for cyclic rotation transactions.
+   *
+   * <p>The swap semantics are: for each i in 0..S-1, {@code keys[(i+1) % S].field} is set to
+   * {@code keys[i].field}.
+   *
+   * @param tableName the name of the table
+   * @param keys      the S record keys involved in the swap
+   * @param field     the field name to rotate
+   * @return SQL statement for swap operation, or null to use the default implementation
+   */
+  public String createSwapStatement(String tableName, String[] keys, String field) {
+    // By default, return null to indicate no special swap statement
+    // Subclasses can override to provide database-specific implementations
+    return null;
+  }
   
   /**
    * Indicates whether this database flavor supports optimized two-phase transfer transactions.

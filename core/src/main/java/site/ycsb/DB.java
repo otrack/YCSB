@@ -163,6 +163,48 @@ public abstract class DB {
   }
 
   /**
+   * Swap operation for the swap workload.
+   * This method implements a cyclic rotation of field values among S users (keys):
+   * for each i in 0..S-1, user[keys[(i+1) % S]].field is set to user[keys[i]].field.
+   * The default implementation uses an interactive approach with separate read and update operations.
+   * Database implementations that support transactions should override this method.
+   *
+   * @param table The name of the table
+   * @param keys  The keys of the S users to swap among
+   * @param field The field name containing the value to rotate
+   * @return The result of the operation.
+   */
+  public Status swap(String table, String[] keys, String field) {
+    int s = keys.length;
+    Set<String> fields = new java.util.HashSet<>();
+    fields.add(field);
+
+    // Read all values
+    String[] values = new String[s];
+    for (int i = 0; i < s; i++) {
+      HashMap<String, ByteIterator> result = new HashMap<>();
+      Status status = read(table, keys[i], fields, result);
+      if (!status.isOk()) {
+        return status;
+      }
+      ByteIterator val = result.get(field);
+      values[i] = val != null ? val.toString() : "0";
+    }
+
+    // Write: keys[(i+1) % s].field = keys[i].field  (cyclic rotation)
+    for (int i = 0; i < s; i++) {
+      HashMap<String, ByteIterator> update = new HashMap<>();
+      update.put(field, new StringByteIterator(values[i]));
+      Status status = update(table, keys[(i + 1) % s], update);
+      if (!status.isOk()) {
+        return status;
+      }
+    }
+
+    return Status.OK;
+  }
+
+  /**
    * Cleanup any state for this DB.
    * Called once per DB instance; there is one DB instance per client thread.
    */
