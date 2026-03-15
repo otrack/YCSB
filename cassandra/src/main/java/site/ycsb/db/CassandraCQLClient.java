@@ -624,9 +624,8 @@ public class CassandraCQLClient extends DB {
       }
       return Status.OK;
     } catch (Exception e) {
-      if (logger.isDebugEnabled()) {
-        logger.debug(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
-      }
+      // log exceptions that may occur during the "load" phase
+      logger.debug(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
     }
 
     return Status.ERROR;
