@@ -103,6 +103,8 @@ public class CassandraCQLClient extends DB {
       "cassandra.connecttimeoutmillis";
   public static final String READ_TIMEOUT_MILLIS_PROPERTY =
       "cassandra.readtimeoutmillis";
+  public static final Duration DEFAULLT_TIEOUT_MILLIS_PROPERTY =
+      Duration.ofSeconds(10);
 
   public static final String TRACING_PROPERTY = "db.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
@@ -177,7 +179,7 @@ public class CassandraCQLClient extends DB {
           contactPointStrings.add(h + ":" + port);
         }
         ProgrammaticDriverConfigLoaderBuilder configBuilder = DriverConfigLoader.programmaticBuilder()
-            .withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofSeconds(2))
+            .withDuration(DefaultDriverOption.REQUEST_TIMEOUT, DEFAULLT_TIEOUT_MILLIS_PROPERTY)
             //
             .withClass(DefaultDriverOption.LOAD_BALANCING_POLICY_CLASS, LocalFirstLoadBalancingPolicy.class)
             .withStringList(DefaultDriverOption.CONTACT_POINTS, contactPointStrings)
@@ -622,9 +624,8 @@ public class CassandraCQLClient extends DB {
       }
       return Status.OK;
     } catch (Exception e) {
-      if (logger.isDebugEnabled()) {
-        logger.debug(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
-      }
+      // log exceptions that may occur during the "load" phase
+      logger.debug(MessageFormatter.format("Error inserting key: {}", key).getMessage(), e);
     }
 
     return Status.ERROR;
@@ -734,8 +735,7 @@ public class CassandraCQLClient extends DB {
       
       // Execute the hand-written transaction as a single statement
       SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
-      txnStmt = txnStmt.setTimeout(Duration.ofMillis(500))
-          .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+      txnStmt = txnStmt.setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
           .setConsistencyLevel(DefaultConsistencyLevel.QUORUM);
 
       if (trace) {
@@ -821,8 +821,7 @@ public class CassandraCQLClient extends DB {
       }
 
       SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
-      txnStmt = txnStmt.setTimeout(Duration.ofMillis(500))
-          .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+      txnStmt = txnStmt.setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
           .setConsistencyLevel(DefaultConsistencyLevel.QUORUM);
 
       if (trace) {
