@@ -62,7 +62,7 @@ public class TerminatorThread extends Thread {
             if (maxAttempts==0) {
               t.interrupt();
             } else {
-              System.out.println("Still waiting for thread " + t.getName() + " to complete. " +
+              System.out.println("Waiting for thread " + t.getName() + " to complete. " +
                   "Workload status: " + workload.isStopRequested());
             }
           }
