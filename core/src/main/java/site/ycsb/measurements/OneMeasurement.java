@@ -67,6 +67,19 @@ public abstract class OneMeasurement {
   }
 
   /**
+   * Returns the number of operations that did not complete successfully (i.e. with a non-OK status).
+   */
+  public long getFailedOperationsCount() {
+    long count = 0;
+    for (Map.Entry<Status, AtomicInteger> entry : returncodes.entrySet()) {
+      if (!entry.getKey().isOk()) {
+        count += entry.getValue().get();
+      }
+    }
+    return count;
+  }
+
+  /**
    * Export the current measurements to a suitable format.
    *
    * @param exporter Exporter representing the type of format to write to.

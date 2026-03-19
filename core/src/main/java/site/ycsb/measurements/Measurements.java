@@ -257,6 +257,18 @@ public class Measurements {
   }
 
   /**
+   * Returns the total number of operations that did not complete successfully (i.e. with a non-OK status)
+   * across all tracked measurements.
+   */
+  public long getFailedOperationsCount() {
+    long count = 0;
+    for (OneMeasurement measurement : opToMesurementMap.values()) {
+      count += measurement.getFailedOperationsCount();
+    }
+    return count;
+  }
+
+  /**
    * Export the current measurements to a suitable format.
    *
    * @param exporter Exporter representing the type of format to write to.
