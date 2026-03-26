@@ -82,6 +82,7 @@ public class SwiftPaxosClient extends DB {
     try {
       handle.connect();
     } catch (Exception e) {
+      e.printStackTrace();
       throw new DBException("cannot connect to SwiftPaxos", e);
     }
   }

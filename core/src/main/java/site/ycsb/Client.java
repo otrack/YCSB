@@ -417,7 +417,6 @@ public final class Client {
                                            CountDownLatch completeLatch) {
     boolean initFailed = false;
     boolean dotransactions = Boolean.valueOf(props.getProperty(DO_TRANSACTIONS_PROPERTY, String.valueOf(true)));
-
     final List<ClientThread> clients = new ArrayList<>(threadcount);
     try (final TraceScope span = tracer.newScope(CLIENT_INIT_SPAN)) {
       int opcount;
@@ -504,7 +503,11 @@ public final class Client {
                                 long warmupExecutionTime) {
     System.err.println("Starting warm-up period (" + warmupExecutionTime + " seconds).");
     // Use opcount=0 so warm-up threads run until the TerminatorThread stops them.
-    Properties warmupProps = new Properties(props);
+    // FIXME: Properties warmupProps = new Properties(props) is wrong, we want a deep copy instead.
+    Properties warmupProps = new Properties();
+    for (String name : props.stringPropertyNames()) {
+      warmupProps.setProperty(name, props.getProperty(name));
+    }
     warmupProps.setProperty(OPERATION_COUNT_PROPERTY, "0");
     final CountDownLatch warmupLatch = new CountDownLatch(threadcount);
     final List<ClientThread> warmupClients = initDb(dbname, warmupProps, threadcount,
