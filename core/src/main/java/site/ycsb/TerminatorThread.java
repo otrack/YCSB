@@ -37,7 +37,7 @@ public class TerminatorThread extends Thread {
     this.maxExecutionTime = maxExecutionTime;
     this.threads = threads;
     this.workload = workload;
-    waitTimeOutInMS = 2000;
+    waitTimeOutInMS = 100;
     System.err.println("Maximum execution time specified as: " + maxExecutionTime + " secs");
   }
 
@@ -54,9 +54,9 @@ public class TerminatorThread extends Thread {
     for (Thread t : threads) {
       while (t.isAlive()) {
         try {
+          System.out.println("Waiting for " + t.getName());
           t.join(waitTimeOutInMS);
-          if (t.isAlive() && workload.isStopRequested()) {
-            System.out.println("Interrupting thread " + t.getName());
+          if (workload.isStopRequested() && t.isAlive()) {
             t.interrupt();
             break;
           }

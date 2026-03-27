@@ -26,6 +26,9 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import site.ycsb.db.flavors.DBFlavor;
 
 /**
@@ -152,6 +155,12 @@ public class JdbcDBClient extends DB {
   }
 
   private void cleanupAllConnections() throws SQLException {
+    // add a timeout first
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    for (Connection conn : conns) {
+      conn.setNetworkTimeout(executor, 1000);
+    }
+
     for (Connection conn : conns) {
       if (!autoCommit) {
         conn.commit();
