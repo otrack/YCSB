@@ -31,7 +31,6 @@ public class TerminatorThread extends Thread {
   private long maxExecutionTime;
   private Workload workload;
   private long waitTimeOutInMS;
-  private int maxAttempts;
 
   public TerminatorThread(long maxExecutionTime, Collection<? extends Thread> threads,
                           Workload workload) {
@@ -39,7 +38,6 @@ public class TerminatorThread extends Thread {
     this.threads = threads;
     this.workload = workload;
     waitTimeOutInMS = 2000;
-    maxAttempts = 3;
     System.err.println("Maximum execution time specified as: " + maxExecutionTime + " secs");
   }
 
@@ -57,16 +55,10 @@ public class TerminatorThread extends Thread {
       while (t.isAlive()) {
         try {
           t.join(waitTimeOutInMS);
-          if (t.isAlive()) {
-            maxAttempts--;
-            if (maxAttempts==0) {
-              System.out.println("Interrupting thread " + t.getName());
-              t.interrupt();
-              break;
-            } else {
-              System.out.println("Waiting for thread " + t.getName() + " to complete. " +
-                  "Workload status: " + workload.isStopRequested());
-            }
+          if (t.isAlive() && workload.isStopRequested()) {
+            System.out.println("Interrupting thread " + t.getName());
+            t.interrupt();
+            break;
           }
         } catch (InterruptedException e) {
           // Do nothing. Don't know why I was interrupted.
