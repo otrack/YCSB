@@ -54,7 +54,7 @@ public class TerminatorThread extends Thread {
     workload.requestStop();
     System.err.println("Stop requested for workload. Now Joining!");
     for (Thread t : threads) {
-      while (t.isAlive()) {
+      while (t.isAlive() && !t.isInterrupted()) {
         try {
           t.join(waitTimeOutInMS);
           if (t.isAlive()) {
