@@ -55,6 +55,7 @@ Currently, the JDBC driver does not output anything when CockroachDB is used.
 In Cassandra, when tracing is activated, some operations are failing.
 Also, please move the tracing property to DBWrapper because it is something common to several databases (even if for the moment, two databases support it).
 
+<<<<<<< Updated upstream
 # 09.03 - copilot
 
 Your goal is to create a new synthetic workload that generalizes the closed economy one.
@@ -71,3 +72,18 @@ You already provide two efficient implemnentations:
 - one using the JDBC driver with the CockroachDB,
 - and another for Cassandra, using the Accord protocol.
 For both of these implementations, you should look at the code of transfer() which provide a good basis for implementiing efficiently the swap operation.
+=======
+# 09.03 Copilot
+
+In the original paper, the authors of YCSB mention that the warm-up phase is not considered when reporting the results. 
+However, the official “Core Properties” list for the main repo contains no warm‑up knobs; it jumps straight from workload and measurement settings to percentiles, so nothing tells YCSB to ignore an initial phase. (github-wiki-see.page)
+A warm‑up feature (warmupoperationcount / warmupexecutiontime) was proposed in PR #98 back in 2014, but that pull request is still open and not merged, so the code on master never gained those options. (github.com)
+The goal of this task is to implement such a feature.
+To this end,
+- Add a warmupexecutiontime paramter to the Workload class.
+Its default value is one minute.
+- Implement a warm‑up period:
+Do a short “warm-up” run with the same workload but without collecting the numbers you’ll publish (just discard its output).
+This period last the time specified with warmupexecutiontime.
+Then, run the real measurement phase and report its numbers.
+>>>>>>> Stashed changes
