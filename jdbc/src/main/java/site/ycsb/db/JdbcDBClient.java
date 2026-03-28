@@ -271,7 +271,10 @@ public class JdbcDBClient extends DB {
         conns.add(conn);
       }
 
-      System.out.println("Using shards: " + shardCount + ", batchSize:" + batchSize + ", fetchSize: " + jdbcFetchSize);
+      System.out.println("Using shards: " + shardCount
+          + ", batchSize:" + batchSize
+          + ", fetchSize: " + jdbcFetchSize
+          + ", backups: " + backupUrls);
 
       cachedStatements = new ConcurrentHashMap<StatementType, PreparedStatement>();
 
