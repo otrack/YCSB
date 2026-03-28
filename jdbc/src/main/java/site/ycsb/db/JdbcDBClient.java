@@ -95,6 +95,9 @@ public class JdbcDBClient extends DB {
   private boolean sqlserverScans = false;
 
   private List<Connection> conns;
+  private String[] backupUrls;
+  private String user;
+  private String passwd;
   private boolean initialized = false;
   private Properties props;
   private int jdbcFetchSize;
@@ -200,8 +203,8 @@ public class JdbcDBClient extends DB {
     }
     props = getProperties();
     String urls = props.getProperty(CONNECTION_URL, DEFAULT_PROP);
-    String user = props.getProperty(CONNECTION_USER, DEFAULT_PROP);
-    String passwd = props.getProperty(CONNECTION_PASSWD, DEFAULT_PROP);
+    this.user = props.getProperty(CONNECTION_USER, DEFAULT_PROP);
+    this.passwd = props.getProperty(CONNECTION_PASSWD, DEFAULT_PROP);
     String driver = props.getProperty(DRIVER_CLASS);
 
     this.jdbcFetchSize = getIntProperty(props, JDBC_FETCH_SIZE);
@@ -236,10 +239,26 @@ public class JdbcDBClient extends DB {
       // for a longer explanation see the README.md
       // semicolons aren't present in JDBC urls, so we use them to delimit
       // multiple JDBC connections to shard across.
+      // Within each shard entry, a comma separates the primary URL from an
+      // optional backup URL used for runtime connection failover.
       final String[] urlArr = urls.split(";");
-      for (String url : urlArr) {
-        System.out.println("Adding shard node URL: " + url);
-        Connection conn = DriverManager.getConnection(url, user, passwd);
+      backupUrls = new String[urlArr.length];
+      for (int i = 0; i < urlArr.length; i++) {
+        String shardEntry = urlArr[i];
+        String primaryUrl;
+        String backupUrl = null;
+        int commaIdx = shardEntry.indexOf(',');
+        if (commaIdx >= 0) {
+          primaryUrl = shardEntry.substring(0, commaIdx).trim();
+          String candidate = shardEntry.substring(commaIdx + 1).trim();
+          if (!candidate.isEmpty()) {
+            backupUrl = candidate;
+          }
+        } else {
+          primaryUrl = shardEntry.trim();
+        }
+        System.out.println("Adding shard node URL: " + primaryUrl);
+        Connection conn = DriverManager.getConnection(primaryUrl, user, passwd);
 
         // Since there is no explicit commit method in the DB interface, all
         // operations should auto commit, except when explicitly told not to
@@ -247,6 +266,7 @@ public class JdbcDBClient extends DB {
         // scan workload with fetchSize)
         conn.setAutoCommit(autoCommit);
 
+        backupUrls[i] = backupUrl;
         shardCount++;
         conns.add(conn);
       }
@@ -255,7 +275,7 @@ public class JdbcDBClient extends DB {
 
       cachedStatements = new ConcurrentHashMap<StatementType, PreparedStatement>();
 
-      this.dbFlavor = DBFlavor.fromJdbcUrl(urlArr[0]);
+      this.dbFlavor = DBFlavor.fromJdbcUrl(urlArr[0].split(",")[0].trim());
 
       boolean tracingEnabled = getBoolProperty(props, TRACING_PROPERTY,
           Boolean.parseBoolean(TRACING_PROPERTY_DEFAULT));
@@ -330,6 +350,11 @@ public class JdbcDBClient extends DB {
       }
       inTransaction = true;
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        for (int i = 0; i < conns.size(); i++) {
+          attemptFailover(i);
+        }
+      }
       throw new DBException("Error starting transaction: " + e);
     }
   }
@@ -353,6 +378,11 @@ public class JdbcDBClient extends DB {
         inTransaction = false;
       }
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        for (int i = 0; i < conns.size(); i++) {
+          attemptFailover(i);
+        }
+      }
       throw new DBException("Error committing transaction: " + e);
     }
   }
@@ -376,6 +406,11 @@ public class JdbcDBClient extends DB {
         inTransaction = false;
       }
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        for (int i = 0; i < conns.size(); i++) {
+          attemptFailover(i);
+        }
+      }
       throw new DBException("Error aborting transaction: " + e);
     }
   }
@@ -464,6 +499,12 @@ public class JdbcDBClient extends DB {
       }
       return Status.OK;
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(key);
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        }
+      }
       System.err.println("Error in processing read of table " + tableName + ": " + e);
       return Status.ERROR;
     }
@@ -504,6 +545,12 @@ public class JdbcDBClient extends DB {
       }
       return Status.OK;
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(startKey);
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        }
+      }
       System.err.println("Error in processing scan of table: " + tableName + e);
       return Status.ERROR;
     }
@@ -534,6 +581,12 @@ public class JdbcDBClient extends DB {
       }
       return Status.UNEXPECTED_STATE;
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(key);
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        }
+      }
       System.err.println("Error in processing update to table: " + tableName + e);
       return Status.ERROR;
     }
@@ -611,6 +664,12 @@ public class JdbcDBClient extends DB {
       }
       return Status.UNEXPECTED_STATE;
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(key);
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        }
+      }
       System.err.println("Error in processing insert to table: " + tableName + e);
       return Status.ERROR;
     }
@@ -634,6 +693,12 @@ public class JdbcDBClient extends DB {
       }
       return Status.UNEXPECTED_STATE;
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(key);
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        }
+      }
       System.err.println("Error in processing delete to table: " + tableName + e);
       return Status.ERROR;
     }
@@ -686,7 +751,16 @@ public class JdbcDBClient extends DB {
       }
       return success ? Status.OK : Status.UNEXPECTED_STATE;
       
-    } catch (SQLException | NumberFormatException e) {
+    } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(key1);
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        }
+      }
+      System.err.println("Error in processing transfer on table: " + tableName + " - " + e);
+      return Status.ERROR;
+    } catch (NumberFormatException e) {
       System.err.println("Error in processing transfer on table: " + tableName + " - " + e);
       return Status.ERROR;
     } finally {
@@ -701,6 +775,65 @@ public class JdbcDBClient extends DB {
       } catch (SQLException e) {
         System.err.println("Error closing resources: " + e);
       }
+    }
+  }
+
+  /**
+   * Returns true if the given SQLException indicates a broken or lost connection.
+   */
+  private boolean isConnectionError(SQLException e) {
+    String sqlState = e.getSQLState();
+    if (sqlState != null) {
+      // 08000 = connection exception
+      // 08001 = unable to establish SQL connection
+      // 08003 = connection does not exist
+      // 08004 = connection rejected by server
+      // 08006 = connection failure
+      // 08S01 = communication link failure (vendor-specific)
+      // 57P01 = admin shutdown (PostgreSQL/CockroachDB)
+      return sqlState.equals("08000") || sqlState.equals("08001") || sqlState.equals("08003")
+          || sqlState.equals("08004") || sqlState.equals("08006") || sqlState.equals("08S01")
+          || sqlState.equals("57P01");
+    }
+    String msg = e.getMessage();
+    if (msg != null) {
+      String msgLower = msg.toLowerCase();
+      return msgLower.contains("connection") || msgLower.contains("closed")
+          || msgLower.contains("reset") || msgLower.contains("broken")
+          || msgLower.contains("terminated") || msgLower.contains("refused");
+    }
+    return false;
+  }
+
+  /**
+   * Attempts to failover the connection for the given shard index to its backup URL.
+   * Returns true if failover succeeded, false otherwise.
+   */
+  private boolean attemptFailover(int shardIndex) {
+    if (backupUrls == null || shardIndex < 0 || shardIndex >= backupUrls.length) {
+      return false;
+    }
+    String backupUrl = backupUrls[shardIndex];
+    if (backupUrl == null) {
+      return false;
+    }
+    try {
+      Connection newConn = DriverManager.getConnection(backupUrl, user, passwd);
+      newConn.setAutoCommit(autoCommit);
+      Connection oldConn = conns.set(shardIndex, newConn);
+      try {
+        if (oldConn != null && !oldConn.isClosed()) {
+          oldConn.close();
+        }
+      } catch (SQLException ex) {
+        System.err.println("Error closing failed connection: " + ex);
+      }
+      cachedStatements.clear();
+      System.err.println("Connection failed over to backup URL: " + backupUrl);
+      return true;
+    } catch (SQLException ex) {
+      System.err.println("Failover connection attempt failed: " + ex);
+      return false;
     }
   }
 
@@ -776,6 +909,12 @@ public class JdbcDBClient extends DB {
       return success ? Status.OK : Status.UNEXPECTED_STATE;
 
     } catch (SQLException e) {
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(keys[0]);
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        }
+      }
       System.err.println("Error in processing swap on table: " + tableName + " - " + e);
       return Status.ERROR;
     } finally {
