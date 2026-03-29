@@ -85,6 +85,10 @@ public class JdbcDBClient extends DB {
   /** The field name prefix in the table. */
   public static final String COLUMN_PREFIX = "FIELD";
 
+  /** The connection timeout in seconds (applied to both primary and backup connections). */
+  public static final String CONNECTION_TIMEOUT = "db.timeout";
+  public static final int CONNECTION_TIMEOUT_DEFAULT = 10;
+
   /** The tracing property (shared with DBWrapper). */
   public static final String TRACING_PROPERTY = "db.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
@@ -105,6 +109,9 @@ public class JdbcDBClient extends DB {
   private int batchSize;
   private boolean autoCommit;
   private boolean batchUpdates;
+  private int connectionTimeout;
+  private int connectionTimeoutMs;
+  private ExecutorService timeoutExecutor;
   private static final String DEFAULT_PROP = "";
   private ConcurrentMap<StatementType, PreparedStatement> cachedStatements;
   private long numRowsInBatch = 0;
@@ -159,12 +166,6 @@ public class JdbcDBClient extends DB {
   }
 
   private void cleanupAllConnections() throws SQLException {
-    // add a timeout first
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    for (Connection conn : conns) {
-      conn.setNetworkTimeout(executor, 1000);
-    }
-
     for (Connection conn : conns) {
       if (!autoCommit) {
         conn.commit();
@@ -188,6 +189,10 @@ public class JdbcDBClient extends DB {
         }
       }
     }
+
+    if (timeoutExecutor != null) {
+      timeoutExecutor.shutdownNow();
+    }
   }
 
   /** Returns parsed int value from the properties if set, otherwise returns -1. */
@@ -202,6 +207,20 @@ public class JdbcDBClient extends DB {
       }
     }
     return -1;
+  }
+
+  /** Returns parsed int value from the properties if set, otherwise returns defaultVal. */
+  private static int getIntPropertyWithDefault(Properties props, String key, int defaultVal) throws DBException {
+    String valueStr = props.getProperty(key);
+    if (valueStr != null) {
+      try {
+        return Integer.parseInt(valueStr);
+      } catch (NumberFormatException nfe) {
+        System.err.println("Invalid " + key + " specified: " + valueStr);
+        throw new DBException(nfe);
+      }
+    }
+    return defaultVal;
   }
 
   /** Returns parsed boolean value from the properties if set, otherwise returns defaultVal. */
@@ -230,6 +249,9 @@ public class JdbcDBClient extends DB {
 
     this.autoCommit = getBoolProperty(props, JDBC_AUTO_COMMIT, true);
     this.batchUpdates = getBoolProperty(props, JDBC_BATCH_UPDATES, false);
+    this.connectionTimeout = getIntPropertyWithDefault(props, CONNECTION_TIMEOUT, CONNECTION_TIMEOUT_DEFAULT);
+    this.connectionTimeoutMs = this.connectionTimeout * 1000;
+    this.timeoutExecutor = Executors.newSingleThreadExecutor();
 
     try {
 //  The SQL Syntax for Scan depends on the DB engine
@@ -281,12 +303,14 @@ public class JdbcDBClient extends DB {
         }
         System.out.println("Adding shard node URL: " + primaryUrl);
         try {
+          DriverManager.setLoginTimeout(connectionTimeout);
           Connection conn = DriverManager.getConnection(primaryUrl, user, passwd);
           // Since there is no explicit commit method in the DB interface, all
           // operations should auto commit, except when explicitly told not to
           // (this is necessary in cases such as for PostgreSQL when running a
           // scan workload with fetchSize)
           conn.setAutoCommit(autoCommit);
+          conn.setNetworkTimeout(timeoutExecutor, connectionTimeoutMs);
           conns.add(conn);
         } catch (SQLException e) {
           System.out.println("Failed to establish primary connection for shard " + i
@@ -305,8 +329,10 @@ public class JdbcDBClient extends DB {
         if (backupUrl != null) {
           System.out.println("Creating backup connection for shard " + i + " (URL: " + backupUrl + ")");
           try {
+            DriverManager.setLoginTimeout(connectionTimeout);
             Connection backupConn = DriverManager.getConnection(backupUrl, user, passwd);
             backupConn.setAutoCommit(autoCommit);
+            backupConn.setNetworkTimeout(timeoutExecutor, connectionTimeoutMs);
             backupConns.set(i, backupConn);
           } catch (SQLException e) {
             System.out.println("Warning: Failed to create backup connection for shard " + i
@@ -341,12 +367,15 @@ public class JdbcDBClient extends DB {
         }
       }
     } catch (ClassNotFoundException e) {
+      timeoutExecutor.shutdownNow();
       System.err.println("Error in initializing the JDBS driver: " + e);
       throw new DBException(e);
     } catch (SQLException e) {
+      timeoutExecutor.shutdownNow();
       System.err.println("Error in database operation: " + e);
       throw new DBException(e);
     } catch (NumberFormatException e) {
+      timeoutExecutor.shutdownNow();
       System.err.println("Invalid value for fieldcount property. " + e);
       throw new DBException(e);
     }
@@ -896,8 +925,10 @@ public class JdbcDBClient extends DB {
       System.out.println("Creating new backup connection for shard " + shardIndex
           + " (URL: " + backupUrl + ", user: " + user + ")");
       try {
+        DriverManager.setLoginTimeout(connectionTimeout);
         newConn = DriverManager.getConnection(backupUrl, user, passwd);
         newConn.setAutoCommit(autoCommit);
+        newConn.setNetworkTimeout(timeoutExecutor, connectionTimeoutMs);
       } catch (SQLException ex) {
         System.out.println("Failover connection attempt failed for shard " + shardIndex
             + " (URL: " + backupUrl + ", user: " + user + ")"
