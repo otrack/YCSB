@@ -123,20 +123,16 @@ public class ClientThread implements Runnable {
             db.start();
             if (!workload.doTransaction(db, workloadstate)) {
               db.abort();
-              break;
             }
             db.commit();
+           opsdone++;
           } catch (Exception e) {
             try {
               db.abort();
             } catch (Exception ae) {
-              ae.printStackTrace();
               ae.printStackTrace(System.out);
             }
-            throw e;
           }
-
-          opsdone++;
 
           throttleNanos(startTimeNanos);
         }
@@ -148,21 +144,17 @@ public class ClientThread implements Runnable {
           try {
             db.start();
             if (!workload.doInsert(db, workloadstate)) {
-              db.commit();
-              break;
+              db.abort();
             }
             db.commit();
+            opsdone++;
           } catch (Exception e) {
             try {
               db.abort();
             } catch (Exception ae) {
-              ae.printStackTrace();
               ae.printStackTrace(System.out);
             }
-            throw e;
           }
-
-          opsdone++;
 
           throttleNanos(startTimeNanos);
         }
