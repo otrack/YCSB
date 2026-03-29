@@ -95,6 +95,7 @@ public class JdbcDBClient extends DB {
   private boolean sqlserverScans = false;
 
   private List<Connection> conns;
+  private List<Connection> backupConns;
   private String[] backupUrls;
   private String user;
   private String passwd;
@@ -170,6 +171,23 @@ public class JdbcDBClient extends DB {
       }
       conn.close();
     }
+
+    // Close any pre-created backup connections that were never used.
+    if (backupConns != null) {
+      for (Connection backupConn : backupConns) {
+        if (backupConn != null) {
+          try {
+            if (!backupConn.isClosed()) {
+              backupConn.close();
+            }
+          } catch (SQLException e) {
+            System.out.println("Error closing unused backup connection: " + e.getMessage()
+                + " [SQLState: " + e.getSQLState()
+                + ", ErrorCode: " + e.getErrorCode() + "]");
+          }
+        }
+      }
+    }
   }
 
   /** Returns parsed int value from the properties if set, otherwise returns -1. */
@@ -243,6 +261,10 @@ public class JdbcDBClient extends DB {
       // optional backup URL used for runtime connection failover.
       final String[] urlArr = urls.split(";");
       backupUrls = new String[urlArr.length];
+      backupConns = new ArrayList<Connection>(urlArr.length);
+      for (int i = 0; i < urlArr.length; i++) {
+        backupConns.add(null);
+      }
       for (int i = 0; i < urlArr.length; i++) {
         String shardEntry = urlArr[i];
         String primaryUrl;
@@ -258,17 +280,43 @@ public class JdbcDBClient extends DB {
           primaryUrl = shardEntry.trim();
         }
         System.out.println("Adding shard node URL: " + primaryUrl);
-        Connection conn = DriverManager.getConnection(primaryUrl, user, passwd);
-
-        // Since there is no explicit commit method in the DB interface, all
-        // operations should auto commit, except when explicitly told not to
-        // (this is necessary in cases such as for PostgreSQL when running a
-        // scan workload with fetchSize)
-        conn.setAutoCommit(autoCommit);
+        try {
+          Connection conn = DriverManager.getConnection(primaryUrl, user, passwd);
+          // Since there is no explicit commit method in the DB interface, all
+          // operations should auto commit, except when explicitly told not to
+          // (this is necessary in cases such as for PostgreSQL when running a
+          // scan workload with fetchSize)
+          conn.setAutoCommit(autoCommit);
+          conns.add(conn);
+        } catch (SQLException e) {
+          System.out.println("Failed to establish primary connection for shard " + i
+              + " (URL: " + primaryUrl + ", user: " + user + ")"
+              + ": " + e.getMessage()
+              + " [SQLState: " + e.getSQLState()
+              + ", ErrorCode: " + e.getErrorCode() + "]");
+          throw e;
+        }
 
         backupUrls[i] = backupUrl;
         shardCount++;
-        conns.add(conn);
+
+        // Eagerly create backup connection during initialization so it is
+        // ready to use immediately when the primary connection fails.
+        if (backupUrl != null) {
+          System.out.println("Creating backup connection for shard " + i + " (URL: " + backupUrl + ")");
+          try {
+            Connection backupConn = DriverManager.getConnection(backupUrl, user, passwd);
+            backupConn.setAutoCommit(autoCommit);
+            backupConns.set(i, backupConn);
+          } catch (SQLException e) {
+            System.out.println("Warning: Failed to create backup connection for shard " + i
+                + " (URL: " + backupUrl + ", user: " + user + ")"
+                + ": " + e.getMessage()
+                + " [SQLState: " + e.getSQLState()
+                + ", ErrorCode: " + e.getErrorCode() + "]"
+                + ". Backup will be retried on failover.");
+          }
+        }
       }
 
       System.out.println("Using shards: " + shardCount
@@ -810,6 +858,7 @@ public class JdbcDBClient extends DB {
 
   /**
    * Attempts to failover the connection for the given shard index to its backup URL.
+   * Uses the pre-created backup connection from init() if available; otherwise creates a new one.
    * Returns true if failover succeeded, false otherwise.
    */
   private boolean attemptFailover(int shardIndex) {
@@ -820,24 +869,59 @@ public class JdbcDBClient extends DB {
     if (backupUrl == null) {
       return false;
     }
-    try {
-      Connection newConn = DriverManager.getConnection(backupUrl, user, passwd);
-      newConn.setAutoCommit(autoCommit);
-      Connection oldConn = conns.set(shardIndex, newConn);
+
+    // Use the pre-created backup connection if it is available and open.
+    Connection newConn = null;
+    if (backupConns != null && shardIndex < backupConns.size()) {
+      Connection preCreated = backupConns.get(shardIndex);
       try {
-        if (oldConn != null && !oldConn.isClosed()) {
-          oldConn.close();
+        if (preCreated != null && !preCreated.isClosed()) {
+          newConn = preCreated;
+          backupConns.set(shardIndex, null);
+          System.out.println("Failing over shard " + shardIndex
+              + " to pre-created backup connection (URL: " + backupUrl + ")");
         }
       } catch (SQLException ex) {
-        System.err.println("Error closing failed connection: " + ex);
+        System.out.println("Pre-created backup connection for shard " + shardIndex
+            + " is no longer usable: " + ex.getMessage()
+            + " [SQLState: " + ex.getSQLState()
+            + ", ErrorCode: " + ex.getErrorCode() + "]"
+            + ". Attempting to create a new backup connection.");
+        newConn = null;
       }
-      cachedStatements.clear();
-      System.err.println("Connection failed over to backup URL: " + backupUrl);
-      return true;
-    } catch (SQLException ex) {
-      System.err.println("Failover connection attempt failed: " + ex);
-      return false;
     }
+
+    if (newConn == null) {
+      // Fall back to creating a new backup connection on demand.
+      System.out.println("Creating new backup connection for shard " + shardIndex
+          + " (URL: " + backupUrl + ", user: " + user + ")");
+      try {
+        newConn = DriverManager.getConnection(backupUrl, user, passwd);
+        newConn.setAutoCommit(autoCommit);
+      } catch (SQLException ex) {
+        System.out.println("Failover connection attempt failed for shard " + shardIndex
+            + " (URL: " + backupUrl + ", user: " + user + ")"
+            + ": " + ex.getMessage()
+            + " [SQLState: " + ex.getSQLState()
+            + ", ErrorCode: " + ex.getErrorCode() + "]");
+        return false;
+      }
+    }
+
+    Connection oldConn = conns.set(shardIndex, newConn);
+    try {
+      if (oldConn != null && !oldConn.isClosed()) {
+        oldConn.close();
+      }
+    } catch (SQLException ex) {
+      System.out.println("Error closing failed primary connection for shard " + shardIndex
+          + ": " + ex.getMessage()
+          + " [SQLState: " + ex.getSQLState()
+          + ", ErrorCode: " + ex.getErrorCode() + "]");
+    }
+    cachedStatements.clear();
+    System.out.println("Shard " + shardIndex + " successfully failed over to backup URL: " + backupUrl);
+    return true;
   }
 
   private OrderedFieldInfo getFieldInfo(Map<String, ByteIterator> values) {
