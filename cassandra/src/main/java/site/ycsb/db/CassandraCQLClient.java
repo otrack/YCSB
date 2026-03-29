@@ -108,6 +108,8 @@ public class CassandraCQLClient extends DB {
 
   public static final String TRACING_PROPERTY = "db.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
+  /** At most one client thread may trac*/
+  private static final AtomicInteger tracingFlag = new AtomicInteger(1);
 
   public static final String USE_SSL_CONNECTION = "cassandra.useSSL";
   private static final String DEFAULT_USE_SSL_CONNECTION = "false";
@@ -118,7 +120,7 @@ public class CassandraCQLClient extends DB {
    */
   private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
 
-  private static boolean trace = false;
+  private boolean trace = false;
 
   /**
    * Initialize any state for this DB. Called once per DB instance; there is one
@@ -142,6 +144,9 @@ public class CassandraCQLClient extends DB {
       try {
 
         trace = Boolean.valueOf(getProperties().getProperty(TRACING_PROPERTY, TRACING_PROPERTY_DEFAULT));
+        if (!trace || tracingFlag.getAndDecrement() != 1) {
+          trace = false;
+        }
 
         String host = getProperties().getProperty(HOSTS_PROPERTY);
         if (host == null) {

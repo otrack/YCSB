@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import site.ycsb.db.flavors.DBFlavor;
 
@@ -92,6 +93,8 @@ public class JdbcDBClient extends DB {
   /** The tracing property (shared with DBWrapper). */
   public static final String TRACING_PROPERTY = "db.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
+  /** At most one client thread may trac*/
+  private static final AtomicInteger tracingFlag = new AtomicInteger(1);
 
   /** SQL:2008 standard: FETCH FIRST n ROWS after the ORDER BY. */
   private boolean sqlansiScans = false;
@@ -375,7 +378,7 @@ public class JdbcDBClient extends DB {
 
       boolean tracingEnabled = getBoolProperty(props, TRACING_PROPERTY,
           Boolean.parseBoolean(TRACING_PROPERTY_DEFAULT));
-      if (tracingEnabled) {
+      if (tracingEnabled && tracingFlag.getAndDecrement() == 1) {
         this.dbFlavor.setTracingEnabled(true);
         for (Connection conn : conns) {
           try {

@@ -123,6 +123,9 @@ public class ClientThread implements Runnable {
             db.start();
             if (!workload.doTransaction(db, workloadstate)) {
               db.abort();
+              if (opcount!=0) {
+                opsdone++; // count when there is a target number of operations to do (to not mess up with -s)
+              }
             } else {
               db.commit();
               opsdone++;
@@ -146,10 +149,12 @@ public class ClientThread implements Runnable {
             db.start();
             if (!workload.doInsert(db, workloadstate)) {
               db.abort();
-            } else {
-              db.commit();
-              opsdone++;
+              if (opcount!=0) {
+                opsdone++; // same here
+              }
             }
+            db.commit();
+            opsdone++;
           } catch (Exception e) {
             try {
               db.abort();
