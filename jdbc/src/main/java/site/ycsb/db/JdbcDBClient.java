@@ -93,8 +93,8 @@ public class JdbcDBClient extends DB {
   /** The tracing property (shared with DBWrapper). */
   public static final String TRACING_PROPERTY = "db.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
-  /** At most one client thread may trac*/
-  private static final AtomicInteger tracingFlag = new AtomicInteger(1);
+  /** At most one client thread may trace. */
+  private static AtomicInteger tracingFlag = new AtomicInteger(1);
 
   /** SQL:2008 standard: FETCH FIRST n ROWS after the ORDER BY. */
   private boolean sqlansiScans = false;

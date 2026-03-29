@@ -108,8 +108,8 @@ public class CassandraCQLClient extends DB {
 
   public static final String TRACING_PROPERTY = "db.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
-  /** At most one client thread may trac*/
-  private static final AtomicInteger tracingFlag = new AtomicInteger(1);
+  /** At most one client thread may trace. */
+  private static AtomicInteger tracingFlag = new AtomicInteger(1);
 
   public static final String USE_SSL_CONNECTION = "cassandra.useSSL";
   private static final String DEFAULT_USE_SSL_CONNECTION = "false";
