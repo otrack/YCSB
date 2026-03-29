@@ -123,9 +123,10 @@ public class ClientThread implements Runnable {
             db.start();
             if (!workload.doTransaction(db, workloadstate)) {
               db.abort();
+            } else {
+              db.commit();
+              opsdone++;
             }
-            db.commit();
-           opsdone++;
           } catch (Exception e) {
             try {
               db.abort();
@@ -145,9 +146,10 @@ public class ClientThread implements Runnable {
             db.start();
             if (!workload.doInsert(db, workloadstate)) {
               db.abort();
+            } else {
+              db.commit();
+              opsdone++;
             }
-            db.commit();
-            opsdone++;
           } catch (Exception e) {
             try {
               db.abort();
