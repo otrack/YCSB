@@ -616,8 +616,18 @@ public class CassandraCQLClient extends DB {
       // Add fields
       for (int i = 1; i < vars.size(); i++) {
         String colName = vars.get(i).getName().asInternal();
-        builder.setString(i, values.get(colName).toString());
+        if (vars.size()==2) {
+          // FIXME closed-economy workload only
+          try {
+            builder.setInt(i, Integer.parseInt(values.get(colName).toString()));
+          } catch (NumberFormatException e) {
+            builder.setString(i, values.get(colName).toString());
+          }
+        } else {
+          builder.setString(i, values.get(colName).toString());
+        }
       }
+
       if (trace) {
         builder.setTracing(true);
       }
