@@ -83,11 +83,24 @@ FROM eclipse-temurin:17-jre
 # Set working directory
 WORKDIR /ycsb
 
-# Install ping utility
-RUN apt-get update && apt-get install -y iputils-ping
+# Install ping utility and native JNI dependencies
+RUN apt-get update && apt-get install -y \
+    iputils-ping \
+    libgflags2.2 \
+    libgoogle-glog0v6 \
+    libyaml-cpp0.8 \
+    libboost-filesystem1.83.0 \
+    libboost-thread1.83.0 \
+    libboost-coroutine1.83.0 \
+    libboost-context1.83.0 \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the distribution from builder
 COPY --from=builder /ycsb-dist /ycsb
+
+# Copy the native JNI library from tiga-suite container
+COPY --from=0track/tiga-suite:latest /usr/local/lib/libtigaycsb.so /usr/lib/
 
 # Make scripts executable
 RUN chmod +x /ycsb/bin/ycsb.sh && \
