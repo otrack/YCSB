@@ -34,7 +34,7 @@ SCRIPT_DIR=$(dirname "$0" 2>/dev/null)
 YCSB_HOME=$(cd "$SCRIPT_DIR/.." && pwd)
 
 # Default image name
-IMAGE_NAME="ycsb"
+IMAGE_NAME="0track/ycsb"
 IMAGE_TAG="latest"
 
 # Function to display usage
