@@ -99,9 +99,6 @@ RUN apt-get update && apt-get install -y \
 # Copy the distribution from builder
 COPY --from=builder /ycsb-dist /ycsb
 
-# Copy the native JNI library from tiga-suite container
-COPY --from=0track/tiga-suite:latest /usr/local/lib/libtigaycsb.so /usr/lib/
-
 # Make scripts executable
 RUN chmod +x /ycsb/bin/ycsb.sh && \
     if [ -f /ycsb/bin/ycsb ]; then chmod +x /ycsb/bin/ycsb; fi

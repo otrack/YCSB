@@ -1,33 +1,41 @@
 package com.tiga.ycsb;
 
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * Native JNI wrapper client for Tiga/Calvin/Detock databases.
+ * Native JNI wrapper client for Tiga/Calvin/Detock/Janus databases.
  */
 public class YcsbClient {
-  static {
+  private static final Set<String> LOADED_LIBRARIES = new HashSet<>();
+
+  private static synchronized void ensureLibraryLoaded(String mode) {
+    String libShortName = "janus".equalsIgnoreCase(mode) ? "janusycsb" : "tigaycsb";
+    if (LOADED_LIBRARIES.contains(libShortName)) {
+      return;
+    }
     try {
-      System.loadLibrary("tigaycsb");
+      System.loadLibrary(libShortName);
     } catch (UnsatisfiedLinkError e) {
       try {
-        loadFromJar();
+        loadFromJar(libShortName);
       } catch (Exception ex) {
-        System.err.println("Failed to load native library tigaycsb: " + e.getMessage());
+        System.err.println("Failed to load native library " + libShortName + ": " + e.getMessage());
         System.err.println("Failed to load native library from JAR resources: " + ex.getMessage());
         throw new RuntimeException(ex);
       }
     }
+    LOADED_LIBRARIES.add(libShortName);
   }
 
-  private static void loadFromJar() throws Exception {
-    String libName = "libtigaycsb.so";
-    java.io.InputStream in = YcsbClient.class.getClassLoader().getResourceAsStream(libName);
+  private static void loadFromJar(String libShortName) throws Exception {
+    String resourceName = "lib" + libShortName + ".so";
+    java.io.InputStream in = YcsbClient.class.getClassLoader().getResourceAsStream(resourceName);
     if (in == null) {
-      throw new java.io.FileNotFoundException("Library " + libName + " not found in JAR resources");
+      throw new java.io.FileNotFoundException("Library " + resourceName + " not found in JAR resources");
     }
-    java.io.File tempFile = java.io.File.createTempFile("libtigaycsb", ".so");
+    java.io.File tempFile = java.io.File.createTempFile("lib" + libShortName, ".so");
     tempFile.deleteOnExit();
     try (java.io.FileOutputStream out = new java.io.FileOutputStream(tempFile)) {
       byte[] buffer = new byte[8192];
@@ -43,6 +51,7 @@ public class YcsbClient {
   private final long clientHandle;
 
   public YcsbClient(String configPath, String mode) {
+    ensureLibraryLoaded(mode);
     this.clientHandle = initClient(configPath, mode);
     if (this.clientHandle == 0) {
       throw new RuntimeException("Failed to initialize native " + mode + " client");
