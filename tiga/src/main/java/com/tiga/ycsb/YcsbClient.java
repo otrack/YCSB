@@ -33,6 +33,12 @@ public class YcsbClient {
     String resourceName = "lib" + libShortName + ".so";
     java.io.InputStream in = YcsbClient.class.getClassLoader().getResourceAsStream(resourceName);
     if (in == null) {
+      in = YcsbClient.class.getResourceAsStream("/" + resourceName);
+    }
+    if (in == null && Thread.currentThread().getContextClassLoader() != null) {
+      in = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourceName);
+    }
+    if (in == null) {
       throw new java.io.FileNotFoundException("Library " + resourceName + " not found in JAR resources");
     }
     java.io.File tempFile = java.io.File.createTempFile("lib" + libShortName, ".so");
@@ -71,4 +77,6 @@ public class YcsbClient {
   public native int read(String key, Set<String> fields, Map<String, String> result);
   public native int update(String key, Map<String, String> values);
   public native int insert(String key, Map<String, String> values);
+  public native int transfer(String key1, String key2, String field);
+  public native int swap(String[] keys, String field);
 }

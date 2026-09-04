@@ -41,7 +41,7 @@ public class SwapWorkload extends ClosedEconomyWorkload {
   /**
    * The name of the property for the number of users involved in each swap.
    */
-  public static final String SWAP_SIZE_PROPERTY = "swapsize";
+  public static final String SWAP_SIZE_PROPERTY = "swap.s";
 
   /**
    * The default number of users involved in each swap.

@@ -26,5 +26,6 @@ output*
 
 # ignore native library binaries
 *.so
+tiga/generated-resources/
 
 test-docker.sh

@@ -106,4 +106,30 @@ public class TigaClient extends DB {
     // Ordered range scans are not currently supported by coordinator APIs
     return Status.NOT_IMPLEMENTED;
   }
+
+  @Override
+  public Status transfer(String table, String key1, String key2, String field) {
+    try {
+      int ret = client.transfer(key1, key2, field);
+      if (ret == 0) {
+        return Status.OK;
+      }
+    } catch (Exception e) {
+      System.err.println("Error executing native transfer: " + e.getMessage());
+    }
+    return Status.ERROR;
+  }
+
+  @Override
+  public Status swap(String table, String[] keys, String field) {
+    try {
+      int ret = client.swap(keys, field);
+      if (ret == 0) {
+        return Status.OK;
+      }
+    } catch (Exception e) {
+      System.err.println("Error executing native swap: " + e.getMessage());
+    }
+    return Status.ERROR;
+  }
 }

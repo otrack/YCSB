@@ -37,4 +37,53 @@ LICENSE file.
       <scope>provided</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>fetch-native-libs</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>bash</executable>
+              <arguments>
+                <argument>-c</argument>
+                <argument>
+                  set -e
+                  DEST="${project.build.directory}/generated-resources/main"
+                  mkdir -p "$DEST"
+                  if command -v docker &gt;/dev/null 2&gt;&amp;1 &amp;&amp; docker ps &gt;/dev/null 2&gt;&amp;1; then
+                    echo "[INFO] Extracting native libraries from 0track/tiga-suite:latest via Docker..."
+                    CONTAINER_ID=$(docker create 0track/tiga-suite:latest)
+                    trap 'docker rm -f $CONTAINER_ID &gt;/dev/null 2&gt;&amp;1 || true' EXIT
+                    docker cp "$CONTAINER_ID:/usr/local/lib/libtigaycsb.so" "$DEST/"
+                    docker cp "$CONTAINER_ID:/usr/local/lib/libjanusycsb.so" "$DEST/"
+                  elif [ -f "$DEST/libtigaycsb.so" ] &amp;&amp; [ -f "$DEST/libjanusycsb.so" ]; then
+                    echo "[INFO] Native libraries present in $DEST."
+                  elif [ -f "/usr/local/lib/libtigaycsb.so" ]; then
+                    echo "[INFO] Copying native libraries from /usr/local/lib..."
+                    cp /usr/local/lib/lib*ycsb.so "$DEST/"
+                  else
+                    echo "[WARNING] Docker daemon not available and native libraries not found."
+                  fi
+                </argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+    <resources>
+      <resource>
+        <directory>${project.build.directory}/generated-resources/main</directory>
+      </resource>
+    </resources>
+  </build>
 </project>
