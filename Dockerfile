@@ -14,10 +14,13 @@
 # LICENSE file.
 
 # Build stage
-FROM maven:3.9-eclipse-temurin-17 AS builder
+FROM maven:3.9-eclipse-temurin-21 AS builder
 
-# Update CA certificates and install git, golang, and build tools for swiftpaxos support
-RUN apt-get update && apt-get install -y ca-certificates git golang make build-essential && update-ca-certificates
+# Update CA certificates and install git, golang, build tools, and docker CLI
+RUN apt-get update && apt-get install -y ca-certificates git golang make build-essential docker.io && update-ca-certificates
+
+# Copy system library directory from 0track/tiga-suite container for Maven fallback
+COPY --from=0track/tiga-suite:latest /usr/local/lib/ /usr/local/lib/
 
 # Set working directory
 WORKDIR /ycsb
@@ -78,7 +81,7 @@ RUN mkdir -p /ycsb-dist/bin /ycsb-dist/workloads /ycsb-dist/core/target /ycsb-di
     done
 
 # Runtime stage
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:21-jre
 
 # Set working directory
 WORKDIR /ycsb
