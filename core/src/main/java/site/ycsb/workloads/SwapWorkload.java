@@ -57,7 +57,7 @@ public class SwapWorkload extends ClosedEconomyWorkload {
     if (swapSize < 2) {
       throw new WorkloadException("swapsize must be at least 2");
     }
-    System.out.println("[CONFIG] Swap_Size: " + swapSize);
+    System.out.println("[CONFIG] swap size: " + swapSize);
   }
 
   /**
