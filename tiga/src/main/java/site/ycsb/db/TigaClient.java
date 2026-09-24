@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.Vector;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Tiga, Calvin, and Detock client binding for YCSB.
@@ -22,6 +23,15 @@ public class TigaClient extends DB {
   public static final String CONFIG_PROPERTY = "tiga.config";
   public static final String MODE_PROPERTY = "tiga.mode";
 
+  public static final String OPENLOOP_RATE_PROPERTY = "tiga.openloop.rate";
+  public static final String OPENLOOP_MAX_OUTSTANDING_PROPERTY = "tiga.openloop.maxOutstanding";
+  public static final String OPENLOOP_SEC_PROPERTY = "tiga.openloop.sec";
+  public static final String OPENLOOP_SWAPSIZE_PROPERTY = "tiga.openloop.swapSize";
+  public static final String OPENLOOP_RECORDCOUNT_PROPERTY = "tiga.openloop.recordCount";
+  public static final String OPENLOOP_ARRIVAL_PROPERTY = "tiga.openloop.arrival";
+
+  private static final AtomicBoolean OPEN_LOOP_STARTED = new AtomicBoolean(false);
+
   @Override
   public void init() throws DBException {
     String configPath = getProperties().getProperty(CONFIG_PROPERTY);
@@ -30,6 +40,33 @@ public class TigaClient extends DB {
     }
 
     String mode = getProperties().getProperty(MODE_PROPERTY, "tiga");
+
+    String rateStr = getProperties().getProperty(OPENLOOP_RATE_PROPERTY);
+    if (rateStr != null) {
+      if (OPEN_LOOP_STARTED.compareAndSet(false, true)) {
+        try {
+          long rate = Long.parseLong(rateStr.trim());
+          long maxOutstanding = Long.parseLong(getProperties()
+              .getProperty(OPENLOOP_MAX_OUTSTANDING_PROPERTY, Long.toString(Math.max(1, rate * 2))).trim());
+          long runSec = Long.parseLong(getProperties().getProperty(OPENLOOP_SEC_PROPERTY, "60").trim());
+          long swapSize = Long.parseLong(getProperties()
+              .getProperty(OPENLOOP_SWAPSIZE_PROPERTY, getProperties().getProperty("swap.s", "3")).trim());
+          long recordCount = Long.parseLong(getProperties()
+              .getProperty(OPENLOOP_RECORDCOUNT_PROPERTY, "0").trim());
+          String arrival = getProperties().getProperty(OPENLOOP_ARRIVAL_PROPERTY, "deterministic").trim();
+
+          client = new YcsbClient(configPath, mode);
+          client.setOpenLoopArrival("poisson".equalsIgnoreCase(arrival) ? 1 : 0);
+          int ret = client.runSwapOpenLoop(rate, maxOutstanding, runSec, recordCount, swapSize);
+          if (ret != 0) {
+            throw new DBException("Open-loop pump failed to start (returned " + ret + ")");
+          }
+        } catch (NumberFormatException e) {
+          throw new DBException("Invalid open-loop numeric property: " + e.getMessage(), e);
+        }
+      }
+      return;
+    }
 
     try {
       client = new YcsbClient(configPath, mode);
@@ -122,6 +159,9 @@ public class TigaClient extends DB {
 
   @Override
   public Status swap(String table, String[] keys, String field) {
+    if (OPEN_LOOP_STARTED.get()) {
+      return Status.OK;
+    }
     try {
       int ret = client.swap(keys, field);
       if (ret == 0) {
