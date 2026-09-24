@@ -19,8 +19,9 @@ FROM maven:3.9-eclipse-temurin-21 AS builder
 # Update CA certificates and install git, golang, build tools, and docker CLI
 RUN apt-get update && apt-get install -y ca-certificates git golang make build-essential docker.io && update-ca-certificates
 
-# Copy system library directory from 0track/tiga-suite container for Maven fallback
+# Copy system library directory and JNI source from 0track/tiga-suite container
 COPY --from=0track/tiga-suite:latest /usr/local/lib/ /usr/local/lib/
+COPY --from=0track/tiga-suite:latest /usr/local/share/java/com/tiga/ycsb/YcsbClient.java /tmp/YcsbClient.java
 
 # Set working directory
 WORKDIR /ycsb
@@ -40,6 +41,14 @@ RUN if echo "$BINDINGS" | grep -q "swiftpaxos"; then \
         make && \
         cd /ycsb; \
     fi
+
+# Build com.tiga:ycsb-jni from the source shipped in 0track/tiga-suite
+RUN mkdir -p /tmp/ycsb-jni-classes && \
+    javac -d /tmp/ycsb-jni-classes /tmp/YcsbClient.java && \
+    jar cf /tmp/ycsb-jni-1.0.jar -C /tmp/ycsb-jni-classes . && \
+    mvn install:install-file -Dfile=/tmp/ycsb-jni-1.0.jar \
+        -DgroupId=com.tiga -DartifactId=ycsb-jni -Dversion=1.0 \
+        -Dpackaging=jar -q
 
 # Build YCSB with specified bindings
 # Use -Psource-run profile to copy dependencies to target/dependency
