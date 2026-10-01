@@ -118,6 +118,24 @@ public abstract class DBFlavor {
     // Subclasses can override to provide database-specific implementations
     return null;
   }
+
+  /**
+   * Create and return a SQL statement for the check-and-increment operation of the Calvin
+   * micro-benchmark: read the given records, and if the sum of their {@code field} is
+   * non-negative, increment {@code field} at each of them.
+   *
+   * <p>The statement takes the keys twice as parameters, and returns a single row with the columns
+   * {@code ok} (the constraint holds), {@code read_rows} and {@code affected_rows}.
+   *
+   * @param tableName the name of the table
+   * @param keys      the record keys
+   * @param field     the field name holding the counter
+   * @return SQL statement for the operation, or null to use the default implementation
+   */
+  public String createCheckAndIncrementStatement(String tableName, String[] keys, String field) {
+    // By default, return null to use the default (interactive) implementation
+    return null;
+  }
   
   /**
    * Indicates whether this database flavor supports optimized two-phase transfer transactions.

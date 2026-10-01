@@ -116,6 +116,56 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
     return sql.toString();
   }
 
+  /**
+   * Creates a single CTE-based SQL statement for the check-and-increment operation
+   * (Calvin micro-benchmark): the counters are read, their sum is checked, and they are all
+   * incremented if it is non-negative. The fields are stored as text, hence the casts.
+   *
+   * <p>Parameter binding order (total = 2*S parameters): keys[0], ..., keys[S-1] for the reads,
+   * then keys[0], ..., keys[S-1] for the UPDATE.
+   */
+  @Override
+  public String createCheckAndIncrementStatement(String tableName, String[] keys, String field) {
+    String inClause = inClause(keys.length);
+    StringBuilder sql = new StringBuilder();
+
+    // CTE 1: read all counters
+    sql.append("WITH vals AS (");
+    sql.append("SELECT ").append(field).append(" FROM ").append(tableName);
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" IN ").append(inClause);
+    sql.append("), ");
+
+    // CTE 2: check the constraint
+    sql.append("chk AS (");
+    sql.append("SELECT COALESCE(SUM(CAST(").append(field).append(" AS INT8)), 0) >= 0 AS ok,");
+    sql.append(" COUNT(*) AS n FROM vals");
+    sql.append("), ");
+
+    // CTE 3: increment all counters if it holds
+    sql.append("update_rows AS (");
+    sql.append("UPDATE ").append(tableName);
+    sql.append(" SET ").append(field).append(" = CAST(CAST(").append(field).append(" AS INT8) + 1 AS TEXT)");
+    sql.append(" WHERE ").append(JdbcDBClient.PRIMARY_KEY).append(" IN ").append(inClause);
+    sql.append(" AND (SELECT ok FROM chk)");
+    sql.append(" RETURNING 1) ");
+
+    sql.append("SELECT (SELECT ok FROM chk) AS ok, (SELECT n FROM chk) AS read_rows,");
+    sql.append(" (SELECT COUNT(*) FROM update_rows) AS affected_rows");
+
+    return sql.toString();
+  }
+
+  private static String inClause(int n) {
+    StringBuilder sb = new StringBuilder("(");
+    for (int i = 0; i < n; i++) {
+      if (i > 0) {
+        sb.append(", ");
+      }
+      sb.append("?");
+    }
+    return sb.append(")").toString();
+  }
+
   @Override
   public void activateTracing(Connection conn) throws SQLException {
     try (Statement stmt = conn.createStatement()) {

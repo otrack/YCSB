@@ -1124,4 +1124,83 @@ public class JdbcDBClient extends DB {
       }
     }
   }
+
+  /**
+   * Check-and-increment operation (Calvin micro-benchmark): read the given records, and if the
+   * sum of their {@code field} is non-negative, increment {@code field} at each of them.
+   */
+  @Override
+  public Status checkAndIncrement(String tableName, String[] keys, String field) {
+    // Check if the database flavor provides a custom statement
+    String checkAndIncrementStmt = dbFlavor.createCheckAndIncrementStatement(tableName, keys, field);
+
+    // If flavor returns null, use the default implementation from DB class
+    if (checkAndIncrementStmt == null) {
+      return super.checkAndIncrement(tableName, keys, field);
+    }
+
+    int s = keys.length;
+    Connection conn = null;
+    PreparedStatement stmt = null;
+    ResultSet rs = null;
+    try {
+      conn = getShardConnectionByKey(keys[0]);
+      stmt = conn.prepareStatement(checkAndIncrementStmt);
+
+      // Bind parameters: the keys for the reads, then the keys for the UPDATE
+      int paramIndex = 1;
+      for (int r = 0; r < 2; r++) {
+        for (int i = 0; i < s; i++) {
+          stmt.setString(paramIndex++, keys[i]);
+        }
+      }
+
+      rs = stmt.executeQuery();
+
+      Status status = Status.UNEXPECTED_STATE;
+      if (rs.next()) {
+        boolean ok = rs.getBoolean("ok");
+        int readRows = rs.getInt("read_rows");
+        int affectedRows = rs.getInt("affected_rows");
+        if (readRows < s) {
+          status = Status.NOT_FOUND;
+        } else if ((ok && affectedRows == s) || (!ok && affectedRows == 0)) {
+          // A failed constraint check is not an error: nothing is written
+          status = Status.OK;
+        }
+      }
+
+      if (status.isOk() && dbFlavor.isTracingEnabled()) {
+        dbFlavor.outputTraceResult(conn);
+      }
+      return status;
+
+    } catch (SQLException e) {
+      boolean failoverAttempted = false;
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(keys[0]);
+        failoverAttempted = true;
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        } else {
+          System.err.println("Connection error on shard " + shardIdx + " and failover failed.");
+        }
+      }
+      System.err.println("Error in processing checkAndIncrement on table " + tableName
+          + " [SQLState: " + e.getSQLState() + ", ErrorCode: " + e.getErrorCode()
+          + ", failoverAttempted: " + failoverAttempted + "]: " + e.getMessage());
+      return Status.ERROR;
+    } finally {
+      try {
+        if (rs != null) {
+          rs.close();
+        }
+        if (stmt != null) {
+          stmt.close();
+        }
+      } catch (SQLException e) {
+        System.err.println("Error closing resources: " + e);
+      }
+    }
+  }
 }

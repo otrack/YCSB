@@ -18,6 +18,7 @@ package site.ycsb.db.flavors;
 
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -33,5 +34,19 @@ public class CockroachDBFlavorTest {
     assertTrue(sql.contains("WHERE YCSB_KEY IN (?, ?)"));
     assertTrue(sql.contains("SELECT COUNT(*) AS affected_rows FROM update_rows"));
     assertFalse(sql.contains("FOR UPDATE"));
+  }
+
+  @Test
+  public void createCheckAndIncrementStatementChecksTheSumThenIncrements() {
+    CockroachDBFlavor flavor = new CockroachDBFlavor();
+    String[] keys = {"user1", "user2", "user3"};
+    String sql = flavor.createCheckAndIncrementStatement("usertable", keys, "field0");
+
+    assertTrue(sql.startsWith("WITH vals AS (SELECT field0 FROM usertable WHERE YCSB_KEY IN (?, ?, ?))"));
+    assertTrue(sql.contains("COALESCE(SUM(CAST(field0 AS INT8)), 0) >= 0 AS ok"));
+    assertTrue(sql.contains("UPDATE usertable SET field0 = CAST(CAST(field0 AS INT8) + 1 AS TEXT)"
+        + " WHERE YCSB_KEY IN (?, ?, ?) AND (SELECT ok FROM chk)"));
+    assertTrue(sql.contains("AS affected_rows"));
+    assertEquals(6, sql.length() - sql.replace("?", "").length());
   }
 }

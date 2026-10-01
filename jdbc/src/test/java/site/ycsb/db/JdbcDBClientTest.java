@@ -21,6 +21,7 @@ import static org.junit.Assert.*;
 
 import site.ycsb.ByteIterator;
 import site.ycsb.DBException;
+import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
 import org.junit.*;
 
@@ -449,6 +450,37 @@ public class JdbcDBClientTest {
         } catch (Exception e) {
             e.printStackTrace();
             fail("Failed transactionAbortTest: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void checkAndIncrementTest() {
+        try {
+            String[] keys = {"user_ci_0", "user_ci_1", "user_ci_2"};
+            for (String key : keys) {
+                HashMap<String, ByteIterator> insertMap = new HashMap<String, ByteIterator>();
+                insertMap.put(FIELD_PREFIX + 0, new StringByteIterator("0"));
+                jdbcDBClient.insert(TABLE_NAME, key, insertMap);
+            }
+
+            // The default (interactive) implementation, in a transaction as in ClientThread
+            for (int t = 0; t < 2; t++) {
+                jdbcDBClient.start();
+                assertEquals(Status.OK, jdbcDBClient.checkAndIncrement(TABLE_NAME, keys, FIELD_PREFIX + 0));
+                jdbcDBClient.commit();
+            }
+
+            for (String key : keys) {
+                ResultSet resultSet = jdbcConnection.prepareStatement(
+                    String.format("SELECT %s0 FROM %s WHERE %s = '%s'", FIELD_PREFIX, TABLE_NAME, KEY_FIELD, key)
+                ).executeQuery();
+                assertTrue(resultSet.next());
+                assertEquals("2", resultSet.getString(1));
+                resultSet.close();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            fail("Failed checkAndIncrementTest: " + e.getMessage());
         }
     }
 }
