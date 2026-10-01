@@ -667,11 +667,10 @@ public class ClosedEconomyWorkload extends Workload {
     }
 
     long count = actualOpCount.intValue();
-    // In a closed economy starting with all 0 balances, the sum should always be 0
-    final long expectedSum = 0;
+    final long expectedSum = expectedSum(count);
     double anomalyScore = Math.abs((expectedSum - countedSum) / (1.0 * Math.max(count, 1)));
 
-    if (countedSum != expectedSum) {
+    if (!isConsistent(countedSum, count)) {
       printValidationMessages(System.err, "FAILED", expectedSum, countedSum, count, anomalyScore);
       printValidationMessages(System.out, "FAILED", expectedSum, countedSum, count, anomalyScore);
       return false;
@@ -679,6 +678,21 @@ public class ClosedEconomyWorkload extends Workload {
       printValidationMessages(System.out, "SUCCESS", expectedSum, countedSum, count, anomalyScore);
       return true;
     }
+  }
+
+  /**
+   * The expected sum of all values after {@code count} operations.
+   * In a closed economy starting with all 0 balances, the sum should always be 0.
+   */
+  protected long expectedSum(long count) {
+    return 0;
+  }
+
+  /**
+   * Check whether the counted sum of all values is consistent after {@code count} operations.
+   */
+  protected boolean isConsistent(long countedSum, long count) {
+    return countedSum == expectedSum(count);
   }
 
   /**

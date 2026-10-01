@@ -205,6 +205,60 @@ public abstract class DB {
   }
 
   /**
+   * Check-and-increment operation for the Calvin micro-benchmark workload.
+   * This method reads all the given records, checks a constraint on the values read
+   * (their sum must be non-negative), and, if and only if the constraint holds,
+   * increments the counter stored in {@code field} at each record.
+   * A failed constraint check is not an error: the transaction commits without writing.
+   * The default implementation uses an interactive approach with separate read and update operations.
+   * Database implementations that support transactions should override this method.
+   *
+   * @param table The name of the table
+   * @param keys  The keys of the records to read and increment
+   * @param field The field name containing the counter
+   * @return The result of the operation.
+   */
+  public Status checkAndIncrement(String table, String[] keys, String field) {
+    Set<String> fields = new java.util.HashSet<>();
+    fields.add(field);
+
+    // Read all counters
+    long[] values = new long[keys.length];
+    long sum = 0;
+    for (int i = 0; i < keys.length; i++) {
+      HashMap<String, ByteIterator> result = new HashMap<>();
+      Status status = read(table, keys[i], fields, result);
+      if (!status.isOk()) {
+        return status;
+      }
+      ByteIterator val = result.get(field);
+      try {
+        values[i] = val != null ? Long.parseLong(val.toString()) : 0;
+      } catch (NumberFormatException e) {
+        return Status.ERROR;
+      }
+      sum += values[i];
+    }
+
+    // Constraint check
+    if (sum < 0) {
+      return Status.OK;
+    }
+
+    // Increment all counters
+    for (int i = 0; i < keys.length; i++) {
+      HashMap<String, ByteIterator> update = new HashMap<>();
+      update.put(field, new StringByteIterator(Long.toString(values[i] + 1)));
+      Status status = update(table, keys[i], update);
+      if (!status.isOk()) {
+        return status;
+      }
+    }
+
+    return Status.OK;
+  }
+
+  /**
    * Cleanup any state for this DB.
    * Called once per DB instance; there is one DB instance per client thread.
    */

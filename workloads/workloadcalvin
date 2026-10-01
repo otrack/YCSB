@@ -1,0 +1,39 @@
+# Calvin micro-benchmark (Thomson et al., SIGMOD 2012, Section 6.2, Figure 5)
+#
+#   Each transaction reads calvin.txnsize records, among which a fraction calvin.hotfraction
+#   is taken from a small pool of "hot" records and the rest from a large pool of "cold" records.
+#   If the sum of their counters is non-negative (always true, as counters start at 0 and only
+#   grow), the transaction increments the counter of each record.
+#
+#   The contention index is the fraction of the hot records accessed by a transaction,
+#   i.e. 1 / calvin.hotrecords with one hot record per transaction:
+#     - low contention  (contention index = 0.0001): calvin.hotrecords=10000
+#     - high contention (contention index = 0.01):   calvin.hotrecords=100
+
+recordcount=1000000
+operationcount=1000000
+workload=site.ycsb.workloads.CalvinWorkload
+
+# Records per transaction
+calvin.txnsize=10
+# Fraction of hot records per transaction (0.1 * 10 = 1 hot record)
+calvin.hotfraction=0.1
+# Size of the hot pool (hot records are user0 .. user<calvin.hotrecords - 1>)
+calvin.hotrecords=10000
+# Alternatively, set the contention index directly (overrides calvin.hotrecords)
+#calvin.contentionindex=0.0001
+
+# Transaction proportions (only Calvin transactions)
+readproportion=0
+updateproportion=0
+insertproportion=0
+scanproportion=0
+readmodifywriteproportion=1.0
+
+# A single field per record holding the counter
+fieldcount=1
+readallfields=true
+writeallfields=false
+
+# Validation method
+validatebyquery=false

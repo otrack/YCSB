@@ -59,6 +59,7 @@ public class DBWrapper extends DB {
   private final String scopeStringUpdate;
   private final String scopeStringTransfer;
   private final String scopeStringSwap;
+  private final String scopeStringCheckAndIncrement;
 
   public DBWrapper(final DB db, final Tracer tracer) {
     this.db = db;
@@ -74,6 +75,7 @@ public class DBWrapper extends DB {
     scopeStringUpdate = simple + "#update";
     scopeStringTransfer = simple + "#transfer";
     scopeStringSwap = simple + "#swap";
+    scopeStringCheckAndIncrement = simple + "#checkAndIncrement";
   }
 
   /**
@@ -300,6 +302,27 @@ public class DBWrapper extends DB {
       long ist = measurements.getIntendedStartTimeNs();
       long st = System.nanoTime();
       Status res = db.swap(table, keys, field);
+      long en = System.nanoTime();
+      measure("TX-READMODIFYWRITE", res, ist, st, en);
+      measurements.reportStatus("TX-READMODIFYWRITE", res);
+      return res;
+    }
+  }
+
+  /**
+   * Check-and-increment operation for the Calvin micro-benchmark workload.
+   * Reads the given records and, if their sum is non-negative, increments each counter.
+   *
+   * @param table The name of the table
+   * @param keys  The record keys
+   * @param field The field name containing the counter
+   * @return The result of the operation.
+   */
+  public Status checkAndIncrement(String table, String[] keys, String field) {
+    try (final TraceScope span = tracer.newScope(scopeStringCheckAndIncrement)) {
+      long ist = measurements.getIntendedStartTimeNs();
+      long st = System.nanoTime();
+      Status res = db.checkAndIncrement(table, keys, field);
       long en = System.nanoTime();
       measure("TX-READMODIFYWRITE", res, ist, st, en);
       measurements.reportStatus("TX-READMODIFYWRITE", res);
