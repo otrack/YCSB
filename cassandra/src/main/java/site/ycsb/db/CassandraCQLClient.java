@@ -859,6 +859,95 @@ public class CassandraCQLClient extends DB {
   }
 
   /**
+   * Check-and-increment operation (Calvin micro-benchmark) as a single Accord transaction:
+   * read the {@code field} counters of the given keys, and if the constraint holds, increment
+   * each of them.
+   *
+   * <p>The conditions of an Accord transaction compare one row reference with a term, so the
+   * constraint of the micro-benchmark (the sum of the counters is non-negative) cannot be
+   * expressed. It is checked per counter instead ({@code vi.field >= 0} for each i), which is
+   * equivalent here since counters start at 0 and are only incremented. As for {@link #swap},
+   * the transaction succeeds (and writes nothing) if the condition does not hold.
+   *
+   * @param table The name of the table
+   * @param keys  The record keys
+   * @param field The field holding the counter
+   * @return The result of the operation.
+   */
+  @Override
+  public Status checkAndIncrement(String table, String[] keys, String field) {
+    try {
+      if (!isValidIdentifier(table) || !isValidIdentifier(field)) {
+        logger.error("Invalid table or field name: table={}, field={}", table, field);
+        return Status.ERROR;
+      }
+      for (String key : keys) {
+        if (!isValidIdentifier(key)) {
+          logger.error("Invalid key in checkAndIncrement operation: {}", key);
+          return Status.ERROR;
+        }
+      }
+
+      int s = keys.length;
+      StringBuilder cql = new StringBuilder();
+      cql.append("BEGIN TRANSACTION\n");
+
+      // Declare a variable for each key's current counter
+      for (int i = 0; i < s; i++) {
+        cql.append("  LET v").append(i).append(" = (SELECT ").append(field)
+           .append(" FROM ").append(table)
+           .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[i]).append("');\n");
+      }
+
+      // Constraint: every counter exists and is non-negative
+      cql.append("  IF ");
+      for (int i = 0; i < s; i++) {
+        if (i > 0) {
+          cql.append(" AND ");
+        }
+        cql.append("v").append(i).append(" IS NOT NULL")
+           .append(" AND v").append(i).append(".").append(field).append(" >= 0");
+      }
+      cql.append(" THEN\n");
+
+      // Increment every counter
+      for (int i = 0; i < s; i++) {
+        cql.append("    UPDATE ").append(table)
+           .append(" SET ").append(field).append(" += 1")
+           .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[i]).append("';\n");
+      }
+      cql.append("  END IF\n");
+
+      cql.append("COMMIT TRANSACTION;");
+
+      if (logger.isDebugEnabled()) {
+        logger.debug("Executing checkAndIncrement transaction CQL: {}", cql.toString());
+      }
+
+      SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
+      txnStmt = txnStmt.setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+          .setConsistencyLevel(DefaultConsistencyLevel.QUORUM);
+
+      if (trace) {
+        txnStmt = txnStmt.setTracing(true);
+      }
+
+      ResultSet rs = session.execute(txnStmt);
+
+      if (trace) {
+        outputTrace(rs);
+      }
+      return Status.OK;
+
+    } catch (Exception e) {
+      if (logger.isDebugEnabled()) {
+        logger.debug("Error in checkAndIncrement operation", e);
+      }
+      return Status.ERROR;
+    }
+  }
+
+  /**
    * Validates that an identifier (table or field name) contains only safe characters.
    * This prevents CQL injection through identifier names.
    */
