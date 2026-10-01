@@ -172,4 +172,17 @@ public class TigaClient extends DB {
     }
     return Status.ERROR;
   }
+
+  @Override
+  public Status checkAndIncrement(String table, String[] keys, String field) {
+    try {
+      int ret = client.checkAndIncrement(keys, field);
+      if (ret == 0) {
+        return Status.OK;
+      }
+    } catch (Exception e) {
+      System.err.println("Error executing native checkAndIncrement: " + e.getMessage());
+    }
+    return Status.ERROR;
+  }
 }
