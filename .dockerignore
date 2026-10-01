@@ -1,3 +1,7 @@
+# Build outputs: the image builds the requested modules itself (a host
+# target/ would add unrequested bindings, or stale native libraries)
+**/target
+
 # Git
 .git
 .gitignore

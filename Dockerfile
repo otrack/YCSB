@@ -73,19 +73,18 @@ RUN mkdir -p /ycsb-dist/bin /ycsb-dist/workloads /ycsb-dist/core/target /ycsb-di
     if [ -d /ycsb/core/target/dependency ] && [ "$(ls -A /ycsb/core/target/dependency 2>/dev/null)" ]; then \
         cp -r /ycsb/core/target/dependency/* /ycsb-dist/core/target/dependency/; \
     fi && \
-    # Copy all built binding targets with dependencies \
-    for dir in /ycsb/*/target; do \
-        if [ -d "$dir" ]; then \
-            binding=$(basename $(dirname "$dir")); \
-            if [ "$binding" != "core" ] && [ "$binding" != "distribution" ] && [ "$binding" != "binding-parent" ]; then \
-                echo "Copying binding: $binding"; \
-                mkdir -p "/ycsb-dist/$binding/target"; \
-                cp "$dir"/*.jar "/ycsb-dist/$binding/target/" 2>/dev/null || true; \
-                if [ -d "$dir/dependency" ] && [ "$(ls -A "$dir/dependency" 2>/dev/null)" ]; then \
-                    mkdir -p "/ycsb-dist/$binding/target/dependency"; \
-                    cp -r "$dir/dependency"/* "/ycsb-dist/$binding/target/dependency/"; \
-                fi; \
-            fi; \
+    # Copy the targets (with dependencies) of the requested bindings only, \
+    # i.e., the modules ",site.ycsb:<binding>-binding" listed in BINDINGS \
+    for module in $(echo "$BINDINGS" | tr ',' ' '); do \
+        binding=${module#site.ycsb:}; \
+        binding=${binding%-binding}; \
+        dir="/ycsb/$binding/target"; \
+        echo "Copying binding: $binding"; \
+        mkdir -p "/ycsb-dist/$binding/target"; \
+        cp "$dir"/*.jar "/ycsb-dist/$binding/target/"; \
+        if [ -d "$dir/dependency" ] && [ "$(ls -A "$dir/dependency" 2>/dev/null)" ]; then \
+            mkdir -p "/ycsb-dist/$binding/target/dependency"; \
+            cp -r "$dir/dependency"/* "/ycsb-dist/$binding/target/dependency/"; \
         fi; \
     done
 
