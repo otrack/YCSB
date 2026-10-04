@@ -1,14 +1,27 @@
 # Calvin micro-benchmark (Thomson et al., SIGMOD 2012, Section 6.2, Figure 5)
 #
-#   Each transaction reads calvin.txnsize records, among which a fraction calvin.hotfraction
-#   is taken from a small pool of "hot" records and the rest from a large pool of "cold" records.
-#   If the sum of their counters is non-negative (always true, as counters start at 0 and only
-#   grow), the transaction increments the counter of each record.
+#   The records are split into calvin.partitions partitions (the machines of the paper), each
+#   with a small pool of calvin.hotrecords "hot" records and a large pool of "cold" ones.
+#   A single-partition transaction reads calvin.txnsize records of its home partition, a fraction
+#   calvin.hotfraction of which are hot.  A multipartition transaction (a proportion
+#   calvin.mpproportion of them) spans calvin.mpspan partitions and reads calvin.txnsize/calvin.mpspan
+#   records on each, with as many hot records per partition: with the defaults, 1 hot and 9 cold
+#   records, or 1 hot and 4 cold records on each of 2 partitions.  If the sum of their counters is
+#   non-negative (always true, as counters start at 0 and only grow), the transaction increments the
+#   counter of each record.
 #
-#   The contention index is the fraction of the hot records accessed by a transaction,
-#   i.e. 1 / calvin.hotrecords with one hot record per transaction:
+#   The contention index is the fraction of the hot records of a partition accessed by a
+#   transaction there, i.e. 1 / calvin.hotrecords:
 #     - low contention  (contention index = 0.0001): calvin.hotrecords=10000
 #     - high contention (contention index = 0.01):   calvin.hotrecords=100
+#   Figure 5 uses 10% (low and high contention) and 100% (low contention) multipartition
+#   transactions, and 1M records per partition (recordcount = calvin.partitions * 1000000).
+#
+#   calvin.partitioner must match how the database places the records on its nodes:
+#     - mod:     key number i on partition i mod N (Calvin)
+#     - range:   contiguous blocks of key numbers (zero-padded keys; range-sharded stores)
+#     - murmur3: equal slices of Cassandra's token ring (one token per node)
+#     - tiga:    the shards of Tiga's YCSB client
 
 recordcount=1000000
 operationcount=1000000
@@ -18,10 +31,19 @@ workload=site.ycsb.workloads.CalvinWorkload
 calvin.txnsize=10
 # Fraction of hot records per transaction (0.1 * 10 = 1 hot record)
 calvin.hotfraction=0.1
-# Size of the hot pool (hot records are user0 .. user<calvin.hotrecords - 1>)
+# Size of the hot pool of each partition (its first records)
 calvin.hotrecords=10000
 # Alternatively, set the contention index directly (overrides calvin.hotrecords)
 #calvin.contentionindex=0.0001
+
+# Partitions, and how the records are split into them
+calvin.partitions=1
+calvin.partitioner=mod
+# Proportion of multipartition transactions (ignored with a single partition), and their span
+calvin.mpproportion=0
+calvin.mpspan=2
+# Home partition of the transactions: a partition number, or random
+calvin.homepartition=random
 
 # Transaction proportions (only Calvin transactions)
 readproportion=0
