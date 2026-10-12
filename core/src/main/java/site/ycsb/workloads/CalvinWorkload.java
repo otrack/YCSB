@@ -62,6 +62,7 @@ import java.util.concurrent.ThreadLocalRandom;
  *     their string order is the numerical one</li>
  *     <li>murmur3: equal slices of Cassandra's Murmur3 token ring (one token per node)</li>
  *     <li>tiga: the shards of Tiga's YCSB client</li>
+ *     <li>swiftpaxos: the shards of SwiftPaxos (Janus), as placed by its YCSB driver</li>
  *   </ul></li>
  *   <li><b>calvin.mpproportion</b>: the proportion of multipartition transactions (default: 0, ignored when
  *   {@code N = 1})</li>

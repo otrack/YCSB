@@ -34,7 +34,8 @@ import static org.testng.Assert.*;
 public class TestCalvinWorkload {
 
   private static final String[] ALL_PARTITIONERS = {
-      CalvinPartitioner.MOD, CalvinPartitioner.RANGE, CalvinPartitioner.MURMUR3, CalvinPartitioner.TIGA};
+      CalvinPartitioner.MOD, CalvinPartitioner.RANGE, CalvinPartitioner.MURMUR3, CalvinPartitioner.TIGA,
+      CalvinPartitioner.SWIFTPAXOS};
 
   private static Properties properties(int recordCount, int operationCount) {
     final Properties p = new Properties();
@@ -187,6 +188,24 @@ public class TestCalvinWorkload {
     assertEquals(CalvinPartitioner.tigaKey(""), 1913597);
     assertEquals(CalvinPartitioner.tigaKey("user12345678901234"), 928094);
     assertEquals(CalvinPartitioner.tigaKey("\u00e9t\u00e9"), 62222);
+  }
+
+  @Test
+  public void testSwiftPaxosKey() {
+    // Reference values from the Go code of SwiftPaxos: the key and its shard (janus.Layout.ShardOfKey) for 2 and 3
+    // shards
+    String[] keys = {"", "a", "user0", "user42", "user1234567890123"};
+    long[] hashes = {1125899906842597L, 34902897112120604L, 7096547112167650560L, -1367968407317451858L,
+        856843369769761415L};
+    int[][] shards = {{1, 1}, {0, 2}, {0, 0}, {0, 0}, {1, 2}};
+    for (int i = 0; i < keys.length; i++) {
+      assertEquals(CalvinPartitioner.swiftPaxosKey(keys[i]), hashes[i]);
+      for (int n = 2; n <= 3; n++) {
+        String key = keys[i];
+        CalvinPartitioner part = CalvinPartitioner.create(CalvinPartitioner.SWIFTPAXOS, n, 1, k -> key);
+        assertEquals(part.partitionOf(0), shards[i][n - 2], key + " with " + n + " shards");
+      }
+    }
   }
 
   @Test

@@ -39,6 +39,8 @@ public abstract class CalvinPartitioner {
   public static final String MURMUR3 = "murmur3";
   /** Name of the partitioner placing the keys on the shards as Tiga's YCSB client does. */
   public static final String TIGA = "tiga";
+  /** Name of the partitioner placing the keys on the shards of SwiftPaxos (Janus) as its YCSB driver does. */
+  public static final String SWIFTPAXOS = "swiftpaxos";
 
   /** Tiga's YCSB client maps the keys to integers in {@code [0, TIGA_KEY_SPACE)}. */
   static final int TIGA_KEY_SPACE = 2000005;
@@ -80,9 +82,11 @@ public abstract class CalvinPartitioner {
       return new Hashed(partitions, recordCount, keyName, key -> slice(token(key), partitions));
     case TIGA:
       return new Hashed(partitions, recordCount, keyName, key -> tigaKey(key) % partitions);
+    case SWIFTPAXOS:
+      return new Hashed(partitions, recordCount, keyName, key -> (int) Math.floorMod(swiftPaxosKey(key), partitions));
     default:
       throw new IllegalArgumentException("unknown partitioner: " + name
-          + " (expected " + MOD + ", " + RANGE + ", " + MURMUR3 + " or " + TIGA + ")");
+          + " (expected " + MOD + ", " + RANGE + ", " + MURMUR3 + ", " + TIGA + " or " + SWIFTPAXOS + ")");
     }
   }
 
@@ -154,6 +158,8 @@ public abstract class CalvinPartitioner {
    *   token {@link #initialToken(int, int)};</li>
    *   <li>{@link #TIGA}: the keys that Tiga's YCSB client sends to shard {@code p}, i.e.
    *   {@code tigaKey(key) mod N}.</li>
+   *   <li>{@link #SWIFTPAXOS}: the keys that SwiftPaxos stores on shard {@code p}, i.e.
+   *   {@code swiftPaxosKey(key) mod N} (SwiftPaxos places key {@code k} on shard {@code k mod N}).</li>
    * </ul>
    */
   static final class Hashed extends CalvinPartitioner {
@@ -341,6 +347,17 @@ public abstract class CalvinPartitioner {
     k *= 0xc4ceb9fe1a85ec53L;
     k ^= k >>> 33;
     return k;
+  }
+
+  /**
+   * The integer key under which the SwiftPaxos YCSB driver stores a record (adapted from {@code String.hashCode()}).
+   */
+  public static long swiftPaxosKey(String key) {
+    long h = 1125899906842597L; // prime
+    for (int i = 0; i < key.length(); i++) {
+      h = 31 * h + key.charAt(i);
+    }
+    return h;
   }
 
   /**

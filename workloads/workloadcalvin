@@ -22,6 +22,7 @@
 #     - range:   contiguous blocks of key numbers (zero-padded keys; range-sharded stores)
 #     - murmur3: equal slices of Cassandra's token ring (one token per node)
 #     - tiga:    the shards of Tiga's YCSB client
+#     - swiftpaxos: the shards of SwiftPaxos (Janus, replicasPerShard), as placed by its YCSB driver
 
 recordcount=1000000
 operationcount=1000000

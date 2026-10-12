@@ -17,26 +17,30 @@
 
 package site.ycsb.db.swiftpaxos;
 
+import site.ycsb.ByteArrayByteIterator;
 import site.ycsb.ByteIterator;
 import site.ycsb.DB;
 import site.ycsb.DBException;
 import site.ycsb.Status;
-import site.ycsb.StringByteIterator;
+import site.ycsb.workloads.CalvinPartitioner;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.Vector;
 
-import com.imdea.sw.*;
+import com.imdea.sw.SwiftPaxos;
 
 /**
  * This is a client implementation for SwiftPaxos.
+ * <p>
+ * A record is stored as a row of the column model of the SwiftPaxos state machine, under the key {@link #hash(String)}
+ * of its name. Single-record operations are single commands. {@link #checkAndIncrement} is a one-shot transaction
+ * incrementing the counters of the records: the SwiftPaxos client executes it atomically if the protocol supports
+ * transactions (Janus), and its increments one after the other otherwise.
  */
 public class SwiftPaxosClient extends DB {
 
@@ -66,17 +70,14 @@ public class SwiftPaxosClient extends DB {
 
   @Override
   public void init() throws DBException {
-    boolean leaderless = Boolean.parseBoolean(getProperties().containsKey(LEADERLESS_PROPERTY) ?
-        getProperties().getProperty(LEADERLESS_PROPERTY) : LEADERLESS_PROPERTY_DEFAULT);
-    boolean fast = Boolean.parseBoolean(getProperties().containsKey(FAST_PROPERTY) ?
-        getProperties().getProperty(FAST_PROPERTY) : FAST_PROPERTY_DEFAULT);
-    String master = getProperties().containsKey(MADDR_PROPERTY) ?
-        getProperties().getProperty(MADDR_PROPERTY) : MADDR_PROPERTY_DEFAULT;
+    boolean leaderless = Boolean.parseBoolean(
+        getProperties().getProperty(LEADERLESS_PROPERTY, LEADERLESS_PROPERTY_DEFAULT));
+    boolean fast = Boolean.parseBoolean(getProperties().getProperty(FAST_PROPERTY, FAST_PROPERTY_DEFAULT));
+    String master = getProperties().getProperty(MADDR_PROPERTY, MADDR_PROPERTY_DEFAULT);
     int port = getProperties().containsKey(MPORT_PROPERTY) ?
         Integer.parseInt(getProperties().getProperty(MPORT_PROPERTY)) : MPORT_PROPERTY_DEFAULT;
 
-    this.verbose = Boolean.parseBoolean(getProperties().containsKey(VERBOSE_PROPERTY) ?
-        getProperties().getProperty(VERBOSE_PROPERTY) : VERBOSE_PROPERTY_DEFAULT);
+    this.verbose = Boolean.parseBoolean(getProperties().getProperty(VERBOSE_PROPERTY, VERBOSE_PROPERTY_DEFAULT));
     this.handle = new SwiftPaxos(BUFFER_SIZE, master, port, fast, leaderless, verbose);
 
     try {
@@ -95,8 +96,7 @@ public class SwiftPaxosClient extends DB {
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values) {
     try {
-      byte[] data = marshal(StringByteIterator.getStringMap(values));
-      handle.write(hash(key), data);
+      handle.write(hash(key), SwiftPaxos.encodeRow(columns(values)));
       if (verbose) {
         System.out.println("INSERT: " + key + " -> " + values);
       }
@@ -111,7 +111,10 @@ public class SwiftPaxosClient extends DB {
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
     try {
       final byte[] data = handle.read(hash(key));
-      StringByteIterator.putAllAsByteIterators(result, unmarshal(data));
+      if (data.length == 0) {
+        return Status.NOT_FOUND;
+      }
+      fill(SwiftPaxos.decodeRow(data), fields, result);
       if (verbose) {
         System.out.println("READ: " + key + " -> " + result);
       }
@@ -122,18 +125,22 @@ public class SwiftPaxosClient extends DB {
     return Status.ERROR;
   }
 
+  /**
+   * Scans the keys in [hash(startkey), hash(startkey) + recordcount]. As keys are hashed, this range does not follow
+   * the order of the record names.
+   */
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
-    // FIXME
-    result = new Vector<>();
-    HashMap<String, ByteIterator> item = new HashMap<>();
     try {
       final byte[] data = handle.scan(hash(startkey), recordcount);
-      StringByteIterator.putAllAsByteIterators(item, unmarshal(data));
-      result.add(item);
+      for (Map<String, byte[]> row : SwiftPaxos.decodeRows(data)) {
+        HashMap<String, ByteIterator> item = new HashMap<>();
+        fill(row, fields, item);
+        result.add(item);
+      }
       if (verbose) {
-        System.out.println("SCAN: " + startkey + "[0-" + recordcount + "] -> " + result.toString());
+        System.out.println("SCAN: " + startkey + "[0-" + recordcount + "] -> " + result);
       }
       return Status.OK;
     } catch (Exception e) {
@@ -142,41 +149,71 @@ public class SwiftPaxosClient extends DB {
     return Status.ERROR;
   }
 
-
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values) {
-    // FIXME
-    return insert(table, key, values);
+    try {
+      handle.execute(SwiftPaxos.Op.update(hash(key), columns(values)));
+      if (verbose) {
+        System.out.println("UPDATE: " + key + " -> " + values);
+      }
+      return Status.OK;
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+    return Status.ERROR;
   }
 
   @Override
   public Status delete(String table, String key) {
-    // FIXME
-    return insert(table, key, null);
-  }
-
-  // adapted from String.hashCode()
-  public static long hash(String string) {
-    long h = 1125899906842597L; // prime
-    int len = string.length();
-
-    for (int i = 0; i < len; i++) {
-      h = 31 * h + string.charAt(i);
+    try {
+      handle.execute(SwiftPaxos.Op.delete(hash(key)));
+      return Status.OK;
+    } catch (Exception e) {
+      e.printStackTrace();
     }
-    return h;
+    return Status.ERROR;
   }
 
-  private static byte[] marshal(Map<String, String> map) throws IOException {
-    ByteArrayOutputStream byteOut = new ByteArrayOutputStream();
-    ObjectOutputStream out = new ObjectOutputStream(byteOut);
-    out.writeObject(map);
-    return byteOut.toByteArray();
+  /**
+   * Increments the counter {@code field} of each record in a one-shot transaction. The counters of the Calvin
+   * micro-benchmark start at 0 and are only incremented, so the constraint check of the benchmark (the sum of the
+   * counters is non-negative) always holds: it is not evaluated, as the writes of a one-shot transaction cannot depend
+   * on its reads.
+   */
+  @Override
+  public Status checkAndIncrement(String table, String[] keys, String field) {
+    try {
+      List<SwiftPaxos.Op> ops = new ArrayList<>(keys.length);
+      for (String key : keys) {
+        ops.add(SwiftPaxos.Op.incr(hash(key), field, 1));
+      }
+      handle.execute(ops);
+      return Status.OK;
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+    return Status.ERROR;
   }
 
-  private static Map<String, String> unmarshal(byte[] data) throws IOException, ClassNotFoundException {
-    ByteArrayInputStream byteIn = new ByteArrayInputStream(data);
-    ObjectInputStream in = new ObjectInputStream(byteIn);
-    return (Map<String, String>) in.readObject();
+  /** The SwiftPaxos key of a record (see {@link CalvinPartitioner#swiftPaxosKey(String)}). */
+  public static long hash(String string) {
+    return CalvinPartitioner.swiftPaxosKey(string);
+  }
+
+  private static Map<String, byte[]> columns(Map<String, ByteIterator> values) {
+    Map<String, byte[]> cols = new TreeMap<>();
+    for (Map.Entry<String, ByteIterator> e : values.entrySet()) {
+      cols.put(e.getKey(), e.getValue().toArray());
+    }
+    return cols;
+  }
+
+  private static void fill(Map<String, byte[]> row, Set<String> fields, Map<String, ByteIterator> result) {
+    for (Map.Entry<String, byte[]> e : row.entrySet()) {
+      if (fields == null || fields.contains(e.getKey())) {
+        result.put(e.getKey(), new ByteArrayByteIterator(e.getValue()));
+      }
+    }
   }
 
 }
