@@ -38,9 +38,10 @@ import com.imdea.sw.SwiftPaxos;
  * This is a client implementation for SwiftPaxos.
  * <p>
  * A record is stored as a row of the column model of the SwiftPaxos state machine, under the key {@link #hash(String)}
- * of its name. Single-record operations are single commands. {@link #checkAndIncrement} is a one-shot transaction
- * incrementing the counters of the records: the SwiftPaxos client executes it atomically if the protocol supports
- * transactions (Janus), and its increments one after the other otherwise.
+ * of its name. Single-record operations are single commands. {@link #transfer} and {@link #checkAndIncrement} are
+ * one-shot transactions of increments: the SwiftPaxos client executes them atomically if the protocol supports
+ * transactions (Janus), and their increments one after the other otherwise. {@link #swap} keeps the default,
+ * interactive, implementation: its writes depend on its reads, which one-shot transactions cannot express.
  */
 public class SwiftPaxosClient extends DB {
 
@@ -167,6 +168,20 @@ public class SwiftPaxosClient extends DB {
   public Status delete(String table, String key) {
     try {
       handle.execute(SwiftPaxos.Op.delete(hash(key)));
+      return Status.OK;
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+    return Status.ERROR;
+  }
+
+  /**
+   * Moves one unit from the counter {@code field} of {@code key1} to that of {@code key2}, in a one-shot transaction.
+   */
+  @Override
+  public Status transfer(String table, String key1, String key2, String field) {
+    try {
+      handle.execute(SwiftPaxos.Op.incr(hash(key1), field, -1), SwiftPaxos.Op.incr(hash(key2), field, 1));
       return Status.OK;
     } catch (Exception e) {
       e.printStackTrace();
