@@ -155,6 +155,20 @@ public class CockroachDBFlavor extends DefaultDBFlavor {
     return sql.toString();
   }
 
+  /**
+   * Creates a single SQL statement for the increment operation (Calvin micro-benchmark, without
+   * its constraint check): all the counters are incremented, without returning them. The fields
+   * are stored as text, hence the casts.
+   *
+   * <p>Parameter binding order (total = S parameters): keys[0], ..., keys[S-1].
+   */
+  @Override
+  public String createIncrementStatement(String tableName, String[] keys, String field) {
+    return "UPDATE " + tableName
+        + " SET " + field + " = CAST(CAST(" + field + " AS INT8) + 1 AS TEXT)"
+        + " WHERE " + JdbcDBClient.PRIMARY_KEY + " IN " + inClause(keys.length);
+  }
+
   private static String inClause(int n) {
     StringBuilder sb = new StringBuilder("(");
     for (int i = 0; i < n; i++) {

@@ -6,9 +6,10 @@
 #   calvin.hotfraction of which are hot.  A multipartition transaction (a proportion
 #   calvin.mpproportion of them) spans calvin.mpspan partitions and reads calvin.txnsize/calvin.mpspan
 #   records on each, with as many hot records per partition: with the defaults, 1 hot and 9 cold
-#   records, or 1 hot and 4 cold records on each of 2 partitions.  If the sum of their counters is
-#   non-negative (always true, as counters start at 0 and only grow), the transaction increments the
-#   counter of each record.
+#   records, or 1 hot and 4 cold records on each of 2 partitions.  The transaction increments the
+#   counter of each record.  With calvin.checkinvariant=true, it first reads them and increments them
+#   only if the sum of their counters is non-negative (always true, as counters start at 0 and only
+#   grow); this makes its writes depend on its reads, which one-shot transactions (Janus) cannot do.
 #
 #   The contention index is the fraction of the hot records of a partition accessed by a
 #   transaction there, i.e. 1 / calvin.hotrecords:
@@ -45,6 +46,9 @@ calvin.mpproportion=0
 calvin.mpspan=2
 # Home partition of the transactions: a partition number, or random
 calvin.homepartition=random
+# Read the records and check that the sum of their counters is non-negative before incrementing them
+# (off by default, to compare fairly with systems that cannot evaluate it, e.g. Janus)
+calvin.checkinvariant=false
 
 # Transaction proportions (only Calvin transactions)
 readproportion=0

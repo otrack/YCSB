@@ -876,6 +876,30 @@ public class CassandraCQLClient extends DB {
    */
   @Override
   public Status checkAndIncrement(String table, String[] keys, String field) {
+    return incrementTransaction(table, keys, field, true);
+  }
+
+  /**
+   * Increment operation (Calvin micro-benchmark, without its constraint check) as a single Accord
+   * transaction: increment the {@code field} counter of each of the given keys, with no read and no
+   * condition.
+   *
+   * @param table The name of the table
+   * @param keys  The record keys
+   * @param field The field holding the counter
+   * @return The result of the operation.
+   */
+  @Override
+  public Status increment(String table, String[] keys, String field) {
+    return incrementTransaction(table, keys, field, false);
+  }
+
+  /**
+   * Increments the {@code field} counter of each of the given keys in one Accord transaction; when
+   * {@code check} holds, only if every counter exists and is non-negative (see {@link #checkAndIncrement}).
+   */
+  private Status incrementTransaction(String table, String[] keys, String field, boolean check) {
+    String operation = check ? "checkAndIncrement" : "increment";
     try {
       if (!isValidIdentifier(table) || !isValidIdentifier(field)) {
         logger.error("Invalid table or field name: table={}, field={}", table, field);
@@ -883,7 +907,7 @@ public class CassandraCQLClient extends DB {
       }
       for (String key : keys) {
         if (!isValidIdentifier(key)) {
-          logger.error("Invalid key in checkAndIncrement operation: {}", key);
+          logger.error("Invalid key in {} operation: {}", operation, key);
           return Status.ERROR;
         }
       }
@@ -892,23 +916,25 @@ public class CassandraCQLClient extends DB {
       StringBuilder cql = new StringBuilder();
       cql.append("BEGIN TRANSACTION\n");
 
-      // Declare a variable for each key's current counter
-      for (int i = 0; i < s; i++) {
-        cql.append("  LET v").append(i).append(" = (SELECT ").append(field)
-           .append(" FROM ").append(table)
-           .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[i]).append("');\n");
-      }
-
-      // Constraint: every counter exists and is non-negative
-      cql.append("  IF ");
-      for (int i = 0; i < s; i++) {
-        if (i > 0) {
-          cql.append(" AND ");
+      if (check) {
+        // Declare a variable for each key's current counter
+        for (int i = 0; i < s; i++) {
+          cql.append("  LET v").append(i).append(" = (SELECT ").append(field)
+             .append(" FROM ").append(table)
+             .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[i]).append("');\n");
         }
-        cql.append("v").append(i).append(" IS NOT NULL")
-           .append(" AND v").append(i).append(".").append(field).append(" >= 0");
+
+        // Constraint: every counter exists and is non-negative
+        cql.append("  IF ");
+        for (int i = 0; i < s; i++) {
+          if (i > 0) {
+            cql.append(" AND ");
+          }
+          cql.append("v").append(i).append(" IS NOT NULL")
+             .append(" AND v").append(i).append(".").append(field).append(" >= 0");
+        }
+        cql.append(" THEN\n");
       }
-      cql.append(" THEN\n");
 
       // Increment every counter
       for (int i = 0; i < s; i++) {
@@ -916,12 +942,14 @@ public class CassandraCQLClient extends DB {
            .append(" SET ").append(field).append(" += 1")
            .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[i]).append("';\n");
       }
-      cql.append("  END IF\n");
+      if (check) {
+        cql.append("  END IF\n");
+      }
 
       cql.append("COMMIT TRANSACTION;");
 
       if (logger.isDebugEnabled()) {
-        logger.debug("Executing checkAndIncrement transaction CQL: {}", cql.toString());
+        logger.debug("Executing {} transaction CQL: {}", operation, cql.toString());
       }
 
       SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
@@ -941,7 +969,7 @@ public class CassandraCQLClient extends DB {
 
     } catch (Exception e) {
       if (logger.isDebugEnabled()) {
-        logger.debug("Error in checkAndIncrement operation", e);
+        logger.debug("Error in {} operation", operation, e);
       }
       return Status.ERROR;
     }

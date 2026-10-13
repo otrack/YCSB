@@ -49,4 +49,14 @@ public class CockroachDBFlavorTest {
     assertTrue(sql.contains("AS affected_rows"));
     assertEquals(6, sql.length() - sql.replace("?", "").length());
   }
+
+  @Test
+  public void createIncrementStatementIncrementsWithoutReading() {
+    CockroachDBFlavor flavor = new CockroachDBFlavor();
+    String[] keys = {"user1", "user2", "user3"};
+    String sql = flavor.createIncrementStatement("usertable", keys, "field0");
+
+    assertEquals("UPDATE usertable SET field0 = CAST(CAST(field0 AS INT8) + 1 AS TEXT)"
+        + " WHERE YCSB_KEY IN (?, ?, ?)", sql);
+  }
 }

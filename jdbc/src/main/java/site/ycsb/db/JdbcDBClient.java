@@ -1203,4 +1203,62 @@ public class JdbcDBClient extends DB {
       }
     }
   }
+
+  /**
+   * Increment operation (Calvin micro-benchmark, without its constraint check): increment
+   * {@code field} at each of the given records, without checking anything.
+   */
+  @Override
+  public Status increment(String tableName, String[] keys, String field) {
+    // Check if the database flavor provides a custom statement
+    String incrementStmt = dbFlavor.createIncrementStatement(tableName, keys, field);
+
+    // If flavor returns null, use the default implementation from DB class
+    if (incrementStmt == null) {
+      return super.increment(tableName, keys, field);
+    }
+
+    Connection conn = null;
+    PreparedStatement stmt = null;
+    try {
+      conn = getShardConnectionByKey(keys[0]);
+      stmt = conn.prepareStatement(incrementStmt);
+      for (int i = 0; i < keys.length; i++) {
+        stmt.setString(i + 1, keys[i]);
+      }
+
+      int affectedRows = stmt.executeUpdate();
+      Status status = affectedRows == keys.length ? Status.OK
+          : affectedRows < keys.length ? Status.NOT_FOUND : Status.UNEXPECTED_STATE;
+
+      if (status.isOk() && dbFlavor.isTracingEnabled()) {
+        dbFlavor.outputTraceResult(conn);
+      }
+      return status;
+
+    } catch (SQLException e) {
+      boolean failoverAttempted = false;
+      if (isConnectionError(e)) {
+        int shardIdx = getShardIndexByKey(keys[0]);
+        failoverAttempted = true;
+        if (attemptFailover(shardIdx)) {
+          System.err.println("Connection failed over for shard " + shardIdx + ". Retry the operation.");
+        } else {
+          System.err.println("Connection error on shard " + shardIdx + " and failover failed.");
+        }
+      }
+      System.err.println("Error in processing increment on table " + tableName
+          + " [SQLState: " + e.getSQLState() + ", ErrorCode: " + e.getErrorCode()
+          + ", failoverAttempted: " + failoverAttempted + "]: " + e.getMessage());
+      return Status.ERROR;
+    } finally {
+      try {
+        if (stmt != null) {
+          stmt.close();
+        }
+      } catch (SQLException e) {
+        System.err.println("Error closing resources: " + e);
+      }
+    }
+  }
 }

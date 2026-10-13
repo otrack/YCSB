@@ -38,10 +38,11 @@ import com.imdea.sw.SwiftPaxos;
  * This is a client implementation for SwiftPaxos.
  * <p>
  * A record is stored as a row of the column model of the SwiftPaxos state machine, under the key {@link #hash(String)}
- * of its name. Single-record operations are single commands. {@link #transfer} and {@link #checkAndIncrement} are
+ * of its name. Single-record operations are single commands. {@link #transfer} and {@link #increment} are
  * one-shot transactions of increments: the SwiftPaxos client executes them atomically if the protocol supports
  * transactions (Janus), and their increments one after the other otherwise. {@link #swap} keeps the default,
- * interactive, implementation: its writes depend on its reads, which one-shot transactions cannot express.
+ * interactive, implementation, and {@link #checkAndIncrement} is not implemented: their writes depend on their
+ * reads, which one-shot transactions cannot express.
  */
 public class SwiftPaxosClient extends DB {
 
@@ -190,13 +191,21 @@ public class SwiftPaxosClient extends DB {
   }
 
   /**
-   * Increments the counter {@code field} of each record in a one-shot transaction. The counters of the Calvin
-   * micro-benchmark start at 0 and are only incremented, so the constraint check of the benchmark (the sum of the
-   * counters is non-negative) always holds: it is not evaluated, as the writes of a one-shot transaction cannot depend
-   * on its reads.
+   * The constraint check of the Calvin micro-benchmark (the sum of the counters is non-negative) makes the writes of
+   * a transaction depend on its reads, which a one-shot transaction cannot do. Rather than skipping the check, which
+   * would make the comparison with the systems that evaluate it unfair, it is reported as not implemented: run the
+   * benchmark with {@code calvin.checkinvariant=false} (the default), which calls {@link #increment}.
    */
   @Override
   public Status checkAndIncrement(String table, String[] keys, String field) {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  /**
+   * Increments the counter {@code field} of each record in a one-shot transaction.
+   */
+  @Override
+  public Status increment(String table, String[] keys, String field) {
     try {
       List<SwiftPaxos.Op> ops = new ArrayList<>(keys.length);
       for (String key : keys) {

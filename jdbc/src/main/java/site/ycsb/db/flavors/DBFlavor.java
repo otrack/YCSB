@@ -136,6 +136,23 @@ public abstract class DBFlavor {
     // By default, return null to use the default (interactive) implementation
     return null;
   }
+
+  /**
+   * Create and return a SQL statement for the increment operation of the Calvin micro-benchmark,
+   * when it does not check its constraint: increment {@code field} at each of the given records.
+   *
+   * <p>The statement takes the keys once as parameters; its update count is the number of records
+   * incremented.
+   *
+   * @param tableName the name of the table
+   * @param keys      the record keys
+   * @param field     the field name holding the counter
+   * @return SQL statement for the operation, or null to use the default implementation
+   */
+  public String createIncrementStatement(String tableName, String[] keys, String field) {
+    // By default, return null to use the default (interactive) implementation
+    return null;
+  }
   
   /**
    * Indicates whether this database flavor supports optimized two-phase transfer transactions.

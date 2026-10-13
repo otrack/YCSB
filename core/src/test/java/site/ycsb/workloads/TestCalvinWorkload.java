@@ -371,6 +371,22 @@ public class TestCalvinWorkload {
   }
 
   @Test
+  public void testWorkloadCheckingTheInvariant() throws Exception {
+    Properties extra = new Properties();
+    extra.setProperty(CalvinWorkload.CHECK_INVARIANT_PROPERTY, "true");
+    runWorkload(extra);
+  }
+
+  @Test
+  public void testInvariantNotCheckedByDefault() throws Exception {
+    final Properties p = properties(1000, 1);
+    p.setProperty(CalvinWorkload.HOT_RECORDS_PROPERTY, "10");
+    final CalvinWorkload workload = new CalvinWorkload();
+    workload.init(p);
+    assertFalse(workload.isCheckInvariant());
+  }
+
+  @Test
   public void testPartitionedWorkload() throws Exception {
     Properties extra = new Properties();
     extra.setProperty(CalvinWorkload.PARTITIONS_PROPERTY, "4");

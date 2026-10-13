@@ -60,6 +60,7 @@ public class DBWrapper extends DB {
   private final String scopeStringTransfer;
   private final String scopeStringSwap;
   private final String scopeStringCheckAndIncrement;
+  private final String scopeStringIncrement;
 
   public DBWrapper(final DB db, final Tracer tracer) {
     this.db = db;
@@ -76,6 +77,7 @@ public class DBWrapper extends DB {
     scopeStringTransfer = simple + "#transfer";
     scopeStringSwap = simple + "#swap";
     scopeStringCheckAndIncrement = simple + "#checkAndIncrement";
+    scopeStringIncrement = simple + "#increment";
   }
 
   /**
@@ -323,6 +325,27 @@ public class DBWrapper extends DB {
       long ist = measurements.getIntendedStartTimeNs();
       long st = System.nanoTime();
       Status res = db.checkAndIncrement(table, keys, field);
+      long en = System.nanoTime();
+      measure("TX-READMODIFYWRITE", res, ist, st, en);
+      measurements.reportStatus("TX-READMODIFYWRITE", res);
+      return res;
+    }
+  }
+
+  /**
+   * Increment operation for the Calvin micro-benchmark workload, without its constraint check.
+   * Measured as the same operation as {@link #checkAndIncrement}.
+   *
+   * @param table The name of the table
+   * @param keys  The record keys
+   * @param field The field name containing the counter
+   * @return The result of the operation.
+   */
+  public Status increment(String table, String[] keys, String field) {
+    try (final TraceScope span = tracer.newScope(scopeStringIncrement)) {
+      long ist = measurements.getIntendedStartTimeNs();
+      long st = System.nanoTime();
+      Status res = db.increment(table, keys, field);
       long en = System.nanoTime();
       measure("TX-READMODIFYWRITE", res, ist, st, en);
       measurements.reportStatus("TX-READMODIFYWRITE", res);

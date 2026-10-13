@@ -185,4 +185,22 @@ public class TigaClient extends DB {
     }
     return Status.ERROR;
   }
+
+  /**
+   * Increments the counter {@code field} of each record in a single one-shot transaction, computed by Tiga's state
+   * machine (whereas {@link #checkAndIncrement} is a dependent transaction, decomposed into two locking one-shot
+   * ones).
+   */
+  @Override
+  public Status increment(String table, String[] keys, String field) {
+    try {
+      int ret = client.increment(keys, field);
+      if (ret == 0) {
+        return Status.OK;
+      }
+    } catch (Exception e) {
+      System.err.println("Error executing native increment: " + e.getMessage());
+    }
+    return Status.ERROR;
+  }
 }

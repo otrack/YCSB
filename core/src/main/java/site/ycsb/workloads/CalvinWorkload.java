@@ -34,8 +34,10 @@ import java.util.concurrent.ThreadLocalRandom;
  * Each partition has a small pool of "hot" records (its first {@code H} records) and a large pool of "cold"
  * records (the others). Each record holds a counter in {@code field0}, initially 0.
  *
- * <p>Each transaction reads {@code k} distinct records, checks that the sum of their counters is non-negative,
- * and if so increments each counter (see {@link DB#checkAndIncrement}). A single-partition transaction takes all its
+ * <p>Each transaction accesses {@code k} distinct records and increments each counter. When
+ * {@code calvin.checkinvariant} holds, it first reads them and checks that the sum of their counters is
+ * non-negative, writing only if so (see {@link DB#checkAndIncrement}); otherwise it increments them without
+ * checking anything (see {@link DB#increment}). A single-partition transaction takes all its
  * records from its home partition, among which a tunable fraction is hot. A multipartition transaction spans
  * {@code span} distinct partitions (the home partition and randomly chosen others), and takes {@code k / span}
  * records from each of them, among which as many hot records as a single-partition transaction does.
@@ -69,6 +71,11 @@ import java.util.concurrent.ThreadLocalRandom;
  *   <li><b>calvin.mpspan</b>: the number of partitions of a multipartition transaction (default: 2)</li>
  *   <li><b>calvin.homepartition</b>: the home partition of the transactions, either a partition number or
  *   "random" for a partition chosen uniformly at random for each transaction (default: random)</li>
+ *   <li><b>calvin.checkinvariant</b>: whether a transaction reads its records and checks that the sum of their
+ *   counters is non-negative before incrementing them (default: false). The check always holds, as the counters
+ *   start at 0 and only grow, but it makes the writes of a transaction depend on its reads, which not every
+ *   system can execute (e.g., the one-shot transactions of Janus); leave it off to compare such systems
+ *   fairly.</li>
  *   <li><b>zeropadding</b>: as in {@link CoreWorkload}</li>
  * </ul>
  */
@@ -100,6 +107,9 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
   public static final String HOME_PARTITION_PROPERTY = "calvin.homepartition";
   public static final String HOME_PARTITION_PROPERTY_DEFAULT = "random";
 
+  public static final String CHECK_INVARIANT_PROPERTY = "calvin.checkinvariant";
+  public static final String CHECK_INVARIANT_PROPERTY_DEFAULT = "false";
+
   private int txnSize;
   private double hotFraction;
   private long hotRecords;
@@ -108,6 +118,7 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
   private double mpProportion;
   private int mpSpan;
   private int homePartition; // -1 when random
+  private boolean checkInvariant;
   private int zeroPadding;
 
   @Override
@@ -134,6 +145,8 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
       mpSpan = Integer.parseInt(p.getProperty(MP_SPAN_PROPERTY, MP_SPAN_PROPERTY_DEFAULT));
       String home = p.getProperty(HOME_PARTITION_PROPERTY, HOME_PARTITION_PROPERTY_DEFAULT);
       homePartition = HOME_PARTITION_PROPERTY_DEFAULT.equals(home) ? -1 : Integer.parseInt(home);
+      checkInvariant = Boolean.parseBoolean(
+          p.getProperty(CHECK_INVARIANT_PROPERTY, CHECK_INVARIANT_PROPERTY_DEFAULT).trim());
       zeroPadding = Integer.parseInt(p.getProperty(CoreWorkload.ZERO_PADDING_PROPERTY,
           CoreWorkload.ZERO_PADDING_PROPERTY_DEFAULT));
     } catch (NumberFormatException e) {
@@ -203,6 +216,7 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
     System.out.println("[CONFIG] calvin multipartition proportion: " + mpProportion + " (span " + mpSpan + ")");
     System.out.println("[CONFIG] calvin home partition: "
         + (homePartition < 0 ? HOME_PARTITION_PROPERTY_DEFAULT : homePartition));
+    System.out.println("[CONFIG] calvin check invariant: " + checkInvariant);
   }
 
   public int getTxnSize() {
@@ -215,6 +229,10 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
 
   public CalvinPartitioner getPartitioner() {
     return partitioner;
+  }
+
+  public boolean isCheckInvariant() {
+    return checkInvariant;
   }
 
   @Override
@@ -293,7 +311,8 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
   }
 
   /**
-   * Do a Calvin micro-benchmark transaction: read k records, check their sum, increment each counter.
+   * Do a Calvin micro-benchmark transaction: increment the counters of k records, after checking that their sum
+   * is non-negative when {@code calvin.checkinvariant} holds.
    */
   @Override
   protected boolean doTransactionReadModifyWrite(DB db) {
@@ -302,7 +321,9 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
     for (int i = 0; i < keyNums.length; i++) {
       keys[i] = buildKeyName(keyNums[i]);
     }
-    return db.checkAndIncrement(table, keys, DEFAULT_FIELD_NAME).isOk();
+    return (checkInvariant
+        ? db.checkAndIncrement(table, keys, DEFAULT_FIELD_NAME)
+        : db.increment(table, keys, DEFAULT_FIELD_NAME)).isOk();
   }
 
   /**

@@ -219,6 +219,30 @@ public abstract class DB {
    * @return The result of the operation.
    */
   public Status checkAndIncrement(String table, String[] keys, String field) {
+    return readAndIncrement(table, keys, field, true);
+  }
+
+  /**
+   * Increment operation for the Calvin micro-benchmark workload, when it does not check its constraint:
+   * increments the counter stored in {@code field} at each of the given records, in one transaction, without
+   * returning the values read nor checking any constraint on them.
+   * The default implementation uses an interactive approach with separate read and update operations.
+   * Database implementations that support transactions should override this method.
+   *
+   * @param table The name of the table
+   * @param keys  The keys of the records to increment
+   * @param field The field name containing the counter
+   * @return The result of the operation.
+   */
+  public Status increment(String table, String[] keys, String field) {
+    return readAndIncrement(table, keys, field, false);
+  }
+
+  /**
+   * Reads the counters of the given records and increments each of them; when {@code check} holds, only if
+   * their sum is non-negative.
+   */
+  private Status readAndIncrement(String table, String[] keys, String field, boolean check) {
     Set<String> fields = new java.util.HashSet<>();
     fields.add(field);
 
@@ -241,7 +265,7 @@ public abstract class DB {
     }
 
     // Constraint check
-    if (sum < 0) {
+    if (check && sum < 0) {
       return Status.OK;
     }
 
