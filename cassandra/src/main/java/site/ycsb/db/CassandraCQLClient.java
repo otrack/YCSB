@@ -71,6 +71,10 @@ public class CassandraCQLClient extends DB {
       new AtomicReference<PreparedStatement>();
   private static AtomicReference<PreparedStatement> deleteStmt =
       new AtomicReference<PreparedStatement>();
+  // Prepared Accord transactions, by CQL text (it depends on the operation, the
+  // table, the field and the number of keys; the keys are bound)
+  private static ConcurrentMap<String, PreparedStatement> txnStmts =
+      new ConcurrentHashMap<String, PreparedStatement>();
 
   private static DefaultConsistencyLevel readConsistencyLevel = DefaultConsistencyLevel.ONE;
   private static DefaultConsistencyLevel writeConsistencyLevel = DefaultConsistencyLevel.ONE;
@@ -280,6 +284,7 @@ public class CassandraCQLClient extends DB {
         readAllStmt.set(null);
         scanAllStmt.set(null);
         deleteStmt.set(null);
+        txnStmts.clear();
         session.close();
         session = null;
       }
@@ -711,67 +716,34 @@ public class CassandraCQLClient extends DB {
    */
   @Override
   public Status transfer(String table, String key1, String key2, String field) {
-    try {
-
-      if (!isValidIdentifier(table) || !isValidIdentifier(field)) {
-        logger.error("Invalid table or field name: table={}, field={}", table, field);
-        return Status.ERROR;
-      }
-
-      StringBuilder cql = new StringBuilder();
-      cql.append("BEGIN TRANSACTION\n");
-      
-
-      cql.append("  LET account1 = (SELECT ").append(field)
-         .append(" FROM ").append(table)
-         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key1).append("');\n");
-      
-      cql.append("  LET account2 = (SELECT ").append(field)
-         .append(" FROM ").append(table)
-         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key2).append("');\n");
-      
-      cql.append("  IF account1 IS NOT NULL AND account2 IS NOT NULL ")
-         .append("AND account1.").append(field).append(" IS NOT NULL ")
-         .append("AND account2.").append(field).append(" IS NOT NULL THEN\n");
-      cql.append("    UPDATE ").append(table)
-         .append(" SET ").append(field).append(" -= 1")
-         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key1).append("';\n");
-      
-      cql.append("    UPDATE ").append(table)
-         .append(" SET ").append(field).append(" += 1")
-         .append(" WHERE ").append(YCSB_KEY).append(" = '").append(key2).append("';\n");
-      cql.append("  END IF\n");
-      
-      cql.append("COMMIT TRANSACTION;");
-      
-      if (logger.isDebugEnabled()) {
-        logger.debug("Executing transaction CQL: {}", cql.toString());
-      }
-      
-      // Execute the hand-written transaction as a single statement
-      SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
-      txnStmt = txnStmt.setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
-          .setConsistencyLevel(DefaultConsistencyLevel.QUORUM);
-
-      if (trace) {
-        txnStmt = txnStmt.setTracing(true);
-      }
-
-      ResultSet transferRs = session.execute(txnStmt);
-
-      if (trace) {
-        outputTrace(transferRs);
-      }
-      return Status.OK;
-      
-    } catch (Exception e) {
-      if (logger.isDebugEnabled()) {
-        logger.debug("Error in transfer operation", e);
-      }
+    if (!isValidIdentifier(table) || !isValidIdentifier(field)) {
+      logger.error("Invalid table or field name: table={}, field={}", table, field);
       return Status.ERROR;
     }
+
+    StringBuilder cql = new StringBuilder();
+    cql.append("BEGIN TRANSACTION\n");
+    cql.append("  LET account1 = (SELECT ").append(field)
+       .append(" FROM ").append(table)
+       .append(" WHERE ").append(YCSB_KEY).append(" = ?);\n");
+    cql.append("  LET account2 = (SELECT ").append(field)
+       .append(" FROM ").append(table)
+       .append(" WHERE ").append(YCSB_KEY).append(" = ?);\n");
+    cql.append("  IF account1 IS NOT NULL AND account2 IS NOT NULL ")
+       .append("AND account1.").append(field).append(" IS NOT NULL ")
+       .append("AND account2.").append(field).append(" IS NOT NULL THEN\n");
+    cql.append("    UPDATE ").append(table)
+       .append(" SET ").append(field).append(" -= 1")
+       .append(" WHERE ").append(YCSB_KEY).append(" = ?;\n");
+    cql.append("    UPDATE ").append(table)
+       .append(" SET ").append(field).append(" += 1")
+       .append(" WHERE ").append(YCSB_KEY).append(" = ?;\n");
+    cql.append("  END IF\n");
+    cql.append("COMMIT TRANSACTION;");
+
+    return executeTransaction("transfer", cql.toString(), key1, key2, key1, key2);
   }
-  
+
   /**
    * Swap operation using Cassandra's Accord replication protocol.
    * Performs a cyclic rotation of {@code field} values among S users:
@@ -787,75 +759,46 @@ public class CassandraCQLClient extends DB {
    */
   @Override
   public Status swap(String table, String[] keys, String field) {
-    try {
-      if (!isValidIdentifier(table) || !isValidIdentifier(field)) {
-        logger.error("Invalid table or field name: table={}, field={}", table, field);
-        return Status.ERROR;
-      }
-      for (String key : keys) {
-        if (!isValidIdentifier(key)) {
-          logger.error("Invalid key in swap operation: {}", key);
-          return Status.ERROR;
-        }
-      }
-
-      int s = keys.length;
-      StringBuilder cql = new StringBuilder();
-      cql.append("BEGIN TRANSACTION\n");
-
-      // Declare a variable for each key's current value
-      for (int i = 0; i < s; i++) {
-        cql.append("  LET v").append(i).append(" = (SELECT ").append(field)
-           .append(" FROM ").append(table)
-           .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[i]).append("');\n");
-      }
-
-      // Guard: all variables must be non-null
-      cql.append("  IF ");
-      for (int i = 0; i < s; i++) {
-        if (i > 0) {
-          cql.append(" AND ");
-        }
-        cql.append("v").append(i).append(" IS NOT NULL")
-           .append(" AND v").append(i).append(".").append(field).append(" IS NOT NULL");
-      }
-      cql.append(" THEN\n");
-
-      // Perform cyclic rotation: keys[(i+1)%s].field = keys[i].field
-      for (int i = 0; i < s; i++) {
-        cql.append("    UPDATE ").append(table)
-           .append(" SET ").append(field).append(" = v").append(i).append(".").append(field)
-           .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[(i + 1) % s]).append("';\n");
-      }
-      cql.append("  END IF\n");
-
-      cql.append("COMMIT TRANSACTION;");
-
-      if (logger.isDebugEnabled()) {
-        logger.debug("Executing swap transaction CQL: {}", cql.toString());
-      }
-
-      SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
-      txnStmt = txnStmt.setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
-          .setConsistencyLevel(DefaultConsistencyLevel.QUORUM);
-
-      if (trace) {
-        txnStmt = txnStmt.setTracing(true);
-      }
-
-      ResultSet swapRs = session.execute(txnStmt);
-
-      if (trace) {
-        outputTrace(swapRs);
-      }
-      return Status.OK;
-
-    } catch (Exception e) {
-      if (logger.isDebugEnabled()) {
-        logger.debug("Error in swap operation", e);
-      }
+    if (!isValidIdentifier(table) || !isValidIdentifier(field)) {
+      logger.error("Invalid table or field name: table={}, field={}", table, field);
       return Status.ERROR;
     }
+
+    int s = keys.length;
+    List<Object> values = new ArrayList<>(2 * s);
+    StringBuilder cql = new StringBuilder();
+    cql.append("BEGIN TRANSACTION\n");
+
+    // Declare a variable for each key's current value
+    for (int i = 0; i < s; i++) {
+      cql.append("  LET v").append(i).append(" = (SELECT ").append(field)
+         .append(" FROM ").append(table)
+         .append(" WHERE ").append(YCSB_KEY).append(" = ?);\n");
+      values.add(keys[i]);
+    }
+
+    // Guard: all variables must be non-null
+    cql.append("  IF ");
+    for (int i = 0; i < s; i++) {
+      if (i > 0) {
+        cql.append(" AND ");
+      }
+      cql.append("v").append(i).append(" IS NOT NULL")
+         .append(" AND v").append(i).append(".").append(field).append(" IS NOT NULL");
+    }
+    cql.append(" THEN\n");
+
+    // Perform cyclic rotation: keys[(i+1)%s].field = keys[i].field
+    for (int i = 0; i < s; i++) {
+      cql.append("    UPDATE ").append(table)
+         .append(" SET ").append(field).append(" = v").append(i).append(".").append(field)
+         .append(" WHERE ").append(YCSB_KEY).append(" = ?;\n");
+      values.add(keys[(i + 1) % s]);
+    }
+    cql.append("  END IF\n");
+    cql.append("COMMIT TRANSACTION;");
+
+    return executeTransaction("swap", cql.toString(), values.toArray());
   }
 
   /**
@@ -899,68 +842,86 @@ public class CassandraCQLClient extends DB {
    * {@code check} holds, only if every counter exists and is non-negative (see {@link #checkAndIncrement}).
    */
   private Status incrementTransaction(String table, String[] keys, String field, boolean check) {
-    String operation = check ? "checkAndIncrement" : "increment";
-    try {
-      if (!isValidIdentifier(table) || !isValidIdentifier(field)) {
-        logger.error("Invalid table or field name: table={}, field={}", table, field);
-        return Status.ERROR;
-      }
-      for (String key : keys) {
-        if (!isValidIdentifier(key)) {
-          logger.error("Invalid key in {} operation: {}", operation, key);
-          return Status.ERROR;
-        }
-      }
+    if (!isValidIdentifier(table) || !isValidIdentifier(field)) {
+      logger.error("Invalid table or field name: table={}, field={}", table, field);
+      return Status.ERROR;
+    }
 
-      int s = keys.length;
-      StringBuilder cql = new StringBuilder();
-      cql.append("BEGIN TRANSACTION\n");
+    int s = keys.length;
+    List<Object> values = new ArrayList<>(2 * s);
+    StringBuilder cql = new StringBuilder();
+    cql.append("BEGIN TRANSACTION\n");
 
-      if (check) {
-        // Declare a variable for each key's current counter
-        for (int i = 0; i < s; i++) {
-          cql.append("  LET v").append(i).append(" = (SELECT ").append(field)
-             .append(" FROM ").append(table)
-             .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[i]).append("');\n");
-        }
-
-        // Constraint: every counter exists and is non-negative
-        cql.append("  IF ");
-        for (int i = 0; i < s; i++) {
-          if (i > 0) {
-            cql.append(" AND ");
-          }
-          cql.append("v").append(i).append(" IS NOT NULL")
-             .append(" AND v").append(i).append(".").append(field).append(" >= 0");
-        }
-        cql.append(" THEN\n");
-      }
-
-      // Increment every counter
+    if (check) {
+      // Declare a variable for each key's current counter
       for (int i = 0; i < s; i++) {
-        cql.append("    UPDATE ").append(table)
-           .append(" SET ").append(field).append(" += 1")
-           .append(" WHERE ").append(YCSB_KEY).append(" = '").append(keys[i]).append("';\n");
-      }
-      if (check) {
-        cql.append("  END IF\n");
+        cql.append("  LET v").append(i).append(" = (SELECT ").append(field)
+           .append(" FROM ").append(table)
+           .append(" WHERE ").append(YCSB_KEY).append(" = ?);\n");
+        values.add(keys[i]);
       }
 
-      cql.append("COMMIT TRANSACTION;");
+      // Constraint: every counter exists and is non-negative
+      cql.append("  IF ");
+      for (int i = 0; i < s; i++) {
+        if (i > 0) {
+          cql.append(" AND ");
+        }
+        cql.append("v").append(i).append(" IS NOT NULL")
+           .append(" AND v").append(i).append(".").append(field).append(" >= 0");
+      }
+      cql.append(" THEN\n");
+    }
+
+    // Increment every counter
+    for (int i = 0; i < s; i++) {
+      cql.append("    UPDATE ").append(table)
+         .append(" SET ").append(field).append(" += 1")
+         .append(" WHERE ").append(YCSB_KEY).append(" = ?;\n");
+      values.add(keys[i]);
+    }
+    if (check) {
+      cql.append("  END IF\n");
+    }
+    cql.append("COMMIT TRANSACTION;");
+
+    return executeTransaction(check ? "checkAndIncrement" : "increment", cql.toString(), values.toArray());
+  }
+
+  /**
+   * Executes the Accord transaction {@code cql}, prepared once per text, with the record keys
+   * {@code values} bound to its markers in order. Being prepared, the transaction carries the
+   * index of its routing key (the key of its first update), so that the load balancing policy
+   * sends it to a replica of that key.
+   *
+   * <p>A transaction whose condition does not hold succeeds without writing: this returns
+   * {@link Status#OK} either way.
+   */
+  private Status executeTransaction(String operation, String cql, Object... values) {
+    try {
+      PreparedStatement stmt = txnStmts.get(cql);
+      if (stmt == null) {
+        stmt = session.prepare(SimpleStatement.newInstance(cql)
+            .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+            .setConsistencyLevel(DefaultConsistencyLevel.QUORUM));
+        PreparedStatement prevStmt = txnStmts.putIfAbsent(cql, stmt);
+        if (prevStmt != null) {
+          stmt = prevStmt;
+        }
+      }
 
       if (logger.isDebugEnabled()) {
-        logger.debug("Executing {} transaction CQL: {}", operation, cql.toString());
+        logger.debug("Executing {} transaction CQL: {} with keys {}", operation, cql, Arrays.toString(values));
       }
 
-      SimpleStatement txnStmt = SimpleStatement.newInstance(cql.toString());
-      txnStmt = txnStmt.setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
+      BoundStatement boundStmt = stmt.bind(values)
+          .setSerialConsistencyLevel(DefaultConsistencyLevel.SERIAL)
           .setConsistencyLevel(DefaultConsistencyLevel.QUORUM);
-
       if (trace) {
-        txnStmt = txnStmt.setTracing(true);
+        boundStmt = boundStmt.setTracing(true);
       }
 
-      ResultSet rs = session.execute(txnStmt);
+      ResultSet rs = session.execute(boundStmt);
 
       if (trace) {
         outputTrace(rs);

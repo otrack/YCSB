@@ -15,15 +15,19 @@
  */
 package site.ycsb.db;
 
+import com.datastax.oss.driver.api.core.CqlIdentifier;
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
 import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.loadbalancing.LoadBalancingPolicy;
 import com.datastax.oss.driver.api.core.loadbalancing.NodeDistance;
 import com.datastax.oss.driver.api.core.metadata.Node;
+import com.datastax.oss.driver.api.core.metadata.TokenMap;
+import com.datastax.oss.driver.api.core.metadata.token.Token;
 import com.datastax.oss.driver.api.core.session.Request;
 import com.datastax.oss.driver.api.core.session.Session;
 
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.net.SocketAddress;
 import java.util.ArrayList;
 import java.util.ArrayDeque;
@@ -31,6 +35,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
@@ -46,8 +51,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * belong to a different datacenter are classified as REMOTE and used only as
  * a fallback.
  *
- * <p>Query plans return LOCAL nodes (shuffled) followed by REMOTE nodes
- * (shuffled).
+ * <p>Query plans return LOCAL nodes followed by REMOTE nodes, each group
+ * shuffled. The policy is token aware: when a request has a routing key (a
+ * bound prepared statement whose partition key is known, including the
+ * transactions of Accord, routed by the key of their first update), the
+ * replicas of that key come first in each group, so that the coordinator is a
+ * replica of the key, in the local datacenter if there is one.
  */
 public class LocalFirstLoadBalancingPolicy implements LoadBalancingPolicy {
 
@@ -133,15 +142,61 @@ public class LocalFirstLoadBalancingPolicy implements LoadBalancingPolicy {
 
   @Override
   public Queue<Node> newQueryPlan(Request request, Session session) {
-    // LOCAL nodes first (random order), then REMOTE nodes (random order)
-    List<Node> local = new ArrayList<>(localNodes);
-    Collections.shuffle(local);
-    List<Node> remote = new ArrayList<>(remoteNodes);
-    Collections.shuffle(remote);
+    // LOCAL nodes first, then REMOTE nodes, each in random order with the
+    // replicas of the request's routing key (if any) first
+    Set<Node> replicas = replicasOf(request, session);
+    List<Node> local = replicasFirst(localNodes, replicas);
+    List<Node> remote = replicasFirst(remoteNodes, replicas);
     ArrayDeque<Node> plan = new ArrayDeque<>(local.size() + remote.size());
     plan.addAll(local);
     plan.addAll(remote);
     return plan;
+  }
+
+  /**
+   * The replicas of the routing key (or token) of {@code request}, or an empty
+   * set if it has none or the token map is not available.
+   */
+  private static Set<Node> replicasOf(Request request, Session session) {
+    if (request == null || session == null) {
+      return Collections.emptySet();
+    }
+    Optional<TokenMap> tokenMap = session.getMetadata().getTokenMap();
+    if (!tokenMap.isPresent()) {
+      return Collections.emptySet();
+    }
+    CqlIdentifier keyspace = request.getKeyspace();
+    if (keyspace == null) {
+      keyspace = request.getRoutingKeyspace();
+    }
+    if (keyspace == null) {
+      keyspace = session.getKeyspace().orElse(null);
+    }
+    if (keyspace == null) {
+      return Collections.emptySet();
+    }
+    Token token = request.getRoutingToken();
+    if (token != null) {
+      return tokenMap.get().getReplicas(keyspace, token);
+    }
+    ByteBuffer key = request.getRoutingKey();
+    if (key != null) {
+      return tokenMap.get().getReplicas(keyspace, key);
+    }
+    return Collections.emptySet();
+  }
+
+  /** {@code nodes} in random order, with those in {@code replicas} first. */
+  private static List<Node> replicasFirst(List<Node> nodes, Set<Node> replicas) {
+    List<Node> first = new ArrayList<>();
+    List<Node> others = new ArrayList<>();
+    for (Node node : nodes) {
+      (replicas.contains(node) ? first : others).add(node);
+    }
+    Collections.shuffle(first);
+    Collections.shuffle(others);
+    first.addAll(others);
+    return first;
   }
 
   @Override
