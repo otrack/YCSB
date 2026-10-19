@@ -20,12 +20,18 @@ package site.ycsb.workloads;
 import site.ycsb.DB;
 import site.ycsb.WorkloadException;
 
+import org.HdrHistogram.ConcurrentHistogram;
+import org.HdrHistogram.Histogram;
+
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * The micro-benchmark of the Calvin paper (Thomson et al., SIGMOD 2012, Section 6.2).
@@ -77,6 +83,18 @@ import java.util.concurrent.ThreadLocalRandom;
  *   system can execute (e.g., the one-shot transactions of Janus); leave it off to compare such systems
  *   fairly.</li>
  *   <li><b>zeropadding</b>: as in {@link CoreWorkload}</li>
+ *   <li><b>calvin.ramp</b>: a comma-separated, increasing list of numbers of active client threads, e.g.
+ *   {@code 16,24,36}. Instead of a fixed number of threads, the run goes through one stage per entry, each
+ *   lasting {@code calvin.rampstep} seconds, in which only the first {@code n} threads issue transactions
+ *   (the others wait), so that a single run yields a whole latency/throughput curve. {@code -threads} must be
+ *   at least the last entry, and the run must last long enough ({@code maxexecutiontime}, with an operation
+ *   count that is not reached first); the last stage goes on until the end of the run but only its first
+ *   step is reported. The warm-up phase, if any, is not ramped. At the end, the per-stage results are
+ *   printed as {@code [RAMP], <stage>, <threads>, <seconds>, <ops>, <failed>, <ops/s>, <avg us>, <p50 us>,
+ *   <p95 us>, <p99 us>}, where {@code ops} counts the committed transactions.</li>
+ *   <li><b>calvin.rampstep</b>: the duration of a stage, in seconds (default: 30)</li>
+ *   <li><b>calvin.rampskip</b>: the seconds at the start of each stage that are left out of its results, as
+ *   the closed loop settles (default: 5)</li>
  * </ul>
  */
 public class CalvinWorkload extends ClosedEconomyWorkload {
@@ -110,6 +128,12 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
   public static final String CHECK_INVARIANT_PROPERTY = "calvin.checkinvariant";
   public static final String CHECK_INVARIANT_PROPERTY_DEFAULT = "false";
 
+  public static final String RAMP_PROPERTY = "calvin.ramp";
+  public static final String RAMP_STEP_PROPERTY = "calvin.rampstep";
+  public static final String RAMP_STEP_PROPERTY_DEFAULT = "30";
+  public static final String RAMP_SKIP_PROPERTY = "calvin.rampskip";
+  public static final String RAMP_SKIP_PROPERTY_DEFAULT = "5";
+
   private int txnSize;
   private double hotFraction;
   private long hotRecords;
@@ -121,9 +145,22 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
   private boolean checkInvariant;
   private int zeroPadding;
 
+  // Ramp of the number of active threads (empty when there is none)
+  private int[] ramp = new int[0];
+  private long rampStepNs;
+  private long rampSkipNs;
+  // Whether the stages are being run: with a warm-up, from its end (see resetStopRequested)
+  private volatile boolean rampActive;
+  // Start of the first stage (System.nanoTime), 0 until the first transaction
+  private final AtomicLong rampStart = new AtomicLong(0);
+  private final ThreadLocal<Integer> threadId = new ThreadLocal<>();
+  private Histogram[] stageLatency = new Histogram[0];
+  private LongAdder[] stageFailed = new LongAdder[0];
+
   @Override
   public void init(Properties p) throws WorkloadException {
     super.init(p);
+    initRamp(p);
 
     String partitionerName;
     try {
@@ -217,6 +254,103 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
     System.out.println("[CONFIG] calvin home partition: "
         + (homePartition < 0 ? HOME_PARTITION_PROPERTY_DEFAULT : homePartition));
     System.out.println("[CONFIG] calvin check invariant: " + checkInvariant);
+  }
+
+  private void initRamp(Properties p) throws WorkloadException {
+    String spec = p.getProperty(RAMP_PROPERTY, "").trim();
+    if (spec.isEmpty()) {
+      return;
+    }
+    try {
+      String[] parts = spec.split(",");
+      ramp = new int[parts.length];
+      for (int i = 0; i < parts.length; i++) {
+        ramp[i] = Integer.parseInt(parts[i].trim());
+        if (ramp[i] < 1 || (i > 0 && ramp[i] <= ramp[i - 1])) {
+          throw new WorkloadException(RAMP_PROPERTY + " must be an increasing list of positive numbers: " + spec);
+        }
+      }
+      rampStepNs = TimeUnit.SECONDS.toNanos(Long.parseLong(p.getProperty(RAMP_STEP_PROPERTY,
+          RAMP_STEP_PROPERTY_DEFAULT)));
+      rampSkipNs = TimeUnit.SECONDS.toNanos(Long.parseLong(p.getProperty(RAMP_SKIP_PROPERTY,
+          RAMP_SKIP_PROPERTY_DEFAULT)));
+    } catch (NumberFormatException e) {
+      throw new WorkloadException("invalid " + RAMP_PROPERTY + ", " + RAMP_STEP_PROPERTY + " or "
+          + RAMP_SKIP_PROPERTY + ": " + e.getMessage());
+    }
+    if (rampStepNs <= 0 || rampSkipNs < 0 || rampSkipNs >= rampStepNs) {
+      throw new WorkloadException(RAMP_SKIP_PROPERTY + " must be in [0, " + RAMP_STEP_PROPERTY + ")");
+    }
+    int threads = Integer.parseInt(p.getProperty("threadcount", "1"));
+    if (threads < ramp[ramp.length - 1]) {
+      throw new WorkloadException("-threads (" + threads + ") is below the last stage of " + RAMP_PROPERTY
+          + " (" + ramp[ramp.length - 1] + ")");
+    }
+    stageLatency = new Histogram[ramp.length];
+    stageFailed = new LongAdder[ramp.length];
+    for (int i = 0; i < ramp.length; i++) {
+      stageLatency[i] = new ConcurrentHistogram(TimeUnit.MINUTES.toMicros(10), 3);
+      stageFailed[i] = new LongAdder();
+    }
+    // With a warm-up, the stages start once it is over (see resetStopRequested)
+    rampActive = Long.parseLong(p.getProperty(WARMUP_EXECUTION_TIME, WARMUP_EXECUTION_TIME_DEFAULT)) <= 0;
+    System.out.println("[CONFIG] calvin ramp: " + spec + " threads, " + (rampStepNs / 1000000000L)
+        + "s per stage, first " + (rampSkipNs / 1000000000L) + "s of each left out");
+  }
+
+  @Override
+  public Object initThread(Properties p, int mythreadid, int threadcount) throws WorkloadException {
+    threadId.set(mythreadid);
+    return super.initThread(p, mythreadid, threadcount);
+  }
+
+  @Override
+  public void resetStopRequested() {
+    super.resetStopRequested();
+    // Called at the end of the warm-up phase
+    rampActive = ramp.length > 0;
+  }
+
+  /** The nanoseconds since the start of the ramp, which the first caller starts. */
+  private long rampOffset(long now) {
+    rampStart.compareAndSet(0, now);
+    return now - rampStart.get();
+  }
+
+  @Override
+  public boolean doTransaction(DB db, Object threadState) {
+    if (rampActive) {
+      Integer id = threadId.get();
+      // Wait for the stage in which this thread becomes active
+      while (id != null && id >= ramp[(int) Math.min(ramp.length - 1, rampOffset(System.nanoTime()) / rampStepNs)]) {
+        if (isStopRequested()) {
+          return true;
+        }
+        try {
+          Thread.sleep(10);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          return true;
+        }
+      }
+    }
+    return super.doTransaction(db, threadState);
+  }
+
+  @Override
+  public void cleanup() throws WorkloadException {
+    super.cleanup();
+    if (rampStart.get() == 0) {
+      return;
+    }
+    double seconds = (rampStepNs - rampSkipNs) / 1e9;
+    for (int i = 0; i < ramp.length; i++) {
+      Histogram h = stageLatency[i];
+      System.out.println("[RAMP], " + i + ", " + ramp[i] + ", " + seconds + ", " + h.getTotalCount() + ", "
+          + stageFailed[i].sum() + ", " + String.format("%.2f", h.getTotalCount() / seconds) + ", "
+          + String.format("%.2f", h.getMean()) + ", " + h.getValueAtPercentile(50) + ", "
+          + h.getValueAtPercentile(95) + ", " + h.getValueAtPercentile(99));
+    }
   }
 
   public int getTxnSize() {
@@ -321,9 +455,24 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
     for (int i = 0; i < keyNums.length; i++) {
       keys[i] = buildKeyName(keyNums[i]);
     }
-    return (checkInvariant
+    long begin = System.nanoTime();
+    boolean ok = (checkInvariant
         ? db.checkAndIncrement(table, keys, DEFAULT_FIELD_NAME)
         : db.increment(table, keys, DEFAULT_FIELD_NAME)).isOk();
+    if (rampActive) {
+      // Attribute the transaction to the stage in which it started, unless it is a settling one
+      long offset = begin - rampStart.get();
+      int stage = (int) (offset / rampStepNs);
+      if (offset >= 0 && stage < ramp.length && offset % rampStepNs >= rampSkipNs) {
+        if (ok) {
+          stageLatency[stage].recordValue(Math.min((System.nanoTime() - begin) / 1000,
+              stageLatency[stage].getHighestTrackableValue()));
+        } else {
+          stageFailed[stage].increment();
+        }
+      }
+    }
+    return ok;
   }
 
   /**
