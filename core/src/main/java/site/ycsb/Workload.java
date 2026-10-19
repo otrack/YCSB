@@ -113,6 +113,14 @@ public abstract class Workload {
   public abstract boolean doTransaction(DB db, Object threadstate);
 
   /**
+   * A short description of the state of the workload, appended to each status report ({@code -s}).
+   * Empty by default.
+   */
+  public String getStatus() {
+    return "";
+  }
+
+  /**
    * Allows scheduling a request to stop the workload.
    */
   public void requestStop() {

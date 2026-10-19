@@ -337,6 +337,28 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
     return super.doTransaction(db, threadState);
   }
 
+  /**
+   * The stage of the ramp, if any: {@code ramp stage 2/6 (36 threads, 14s in)}, or {@code ramp over} once the
+   * last stage has gone on for a whole step (it then runs until the end of the run, unreported).
+   */
+  @Override
+  public String getStatus() {
+    long start = rampStart.get();
+    if (ramp.length == 0 || !rampActive) {
+      return "";
+    }
+    if (start == 0) {
+      return "ramp not started";
+    }
+    long offset = System.nanoTime() - start;
+    int stage = (int) (offset / rampStepNs);
+    if (stage >= ramp.length) {
+      return "ramp over";
+    }
+    return "ramp stage " + (stage + 1) + "/" + ramp.length + " (" + ramp[stage] + " threads, "
+        + (offset % rampStepNs) / 1000000000L + "s in)";
+  }
+
   @Override
   public void cleanup() throws WorkloadException {
     super.cleanup();

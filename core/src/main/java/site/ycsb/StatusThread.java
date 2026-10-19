@@ -44,6 +44,9 @@ public class StatusThread extends Thread {
   private final String label;
   private final boolean standardstatus;
 
+  // The workload whose status is appended to each report, if any.
+  private Workload workload;
+
   // The interval for reporting status.
   private long sleeptimeNs;
 
@@ -93,6 +96,13 @@ public class StatusThread extends Thread {
     sleeptimeNs = TimeUnit.SECONDS.toNanos(statusIntervalSeconds);
     measurements = Measurements.getMeasurements();
     this.trackJVMStats = trackJVMStats;
+  }
+
+  /**
+   * Appends the {@link Workload#getStatus()} of the given workload to each report.
+   */
+  public void setWorkload(Workload workload) {
+    this.workload = workload;
   }
 
   /**
@@ -166,6 +176,10 @@ public class StatusThread extends Thread {
 
     StringBuilder msg = new StringBuilder(labelString).append(" ").append(interval / 1000).append(" sec: ");
     msg.append(totalops).append(" operations; ");
+    String workloadStatus = workload == null ? "" : workload.getStatus();
+    if (!workloadStatus.isEmpty()) {
+      msg.append(workloadStatus).append("; ");
+    }
 
     if (totalops != 0) {
       msg.append(d.format(curthroughput)).append(" current ops/sec; ");

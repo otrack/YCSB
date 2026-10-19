@@ -333,6 +333,7 @@ public final class Client {
           Measurements.MEASUREMENT_TRACK_JVM_PROPERTY_DEFAULT).equals("true");
       statusthread = new StatusThread(completeLatch, clients, label, standardstatus, statusIntervalSeconds,
           trackJVMStats);
+      statusthread.setWorkload(workload);
       statusthread.start();
     }
 
