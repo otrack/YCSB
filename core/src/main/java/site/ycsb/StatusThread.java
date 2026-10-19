@@ -101,8 +101,8 @@ public class StatusThread extends Thread {
   /**
    * Appends the {@link Workload#getStatus()} of the given workload to each report.
    */
-  public void setWorkload(Workload workload) {
-    this.workload = workload;
+  public void setWorkload(Workload w) {
+    this.workload = w;
   }
 
   /**
