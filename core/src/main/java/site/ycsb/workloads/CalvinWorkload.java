@@ -93,6 +93,11 @@ import java.util.concurrent.atomic.LongAdder;
  *   printed as {@code [RAMP], <stage>, <threads>, <seconds>, <ops>, <failed>, <ops/s>, <avg us>, <p50 us>,
  *   <p95 us>, <p99 us>}, where {@code ops} counts the committed transactions.</li>
  *   <li><b>calvin.rampstep</b>: the duration of a stage, in seconds (default: 30)</li>
+ *   <li><b>calvin.rampstart</b>: the time (epoch seconds) at which the first stage starts. The clients of a
+ *   run, which share it, then go through the stages at the same moments, whatever time each takes to get ready
+ *   (their clocks are assumed to be synchronized). It must be later than the end of the warm-up and of the
+ *   set-up of the threads. Until it, the threads of the first stage run, unmeasured. Default: the first
+ *   transaction after the warm-up, on each client.</li>
  *   <li><b>calvin.rampskip</b>: the seconds at the start of each stage that are left out of its results, as
  *   the closed loop settles (default: 5)</li>
  * </ul>
@@ -131,6 +136,7 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
   public static final String RAMP_PROPERTY = "calvin.ramp";
   public static final String RAMP_STEP_PROPERTY = "calvin.rampstep";
   public static final String RAMP_STEP_PROPERTY_DEFAULT = "30";
+  public static final String RAMP_START_PROPERTY = "calvin.rampstart";
   public static final String RAMP_SKIP_PROPERTY = "calvin.rampskip";
   public static final String RAMP_SKIP_PROPERTY_DEFAULT = "5";
 
@@ -281,6 +287,15 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
     if (rampStepNs <= 0 || rampSkipNs < 0 || rampSkipNs >= rampStepNs) {
       throw new WorkloadException(RAMP_SKIP_PROPERTY + " must be in [0, " + RAMP_STEP_PROPERTY + ")");
     }
+    String start = p.getProperty(RAMP_START_PROPERTY, "").trim();
+    if (!start.isEmpty()) {
+      try {
+        long untilStartMs = 1000 * Long.parseLong(start) - System.currentTimeMillis();
+        rampStart.set(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(untilStartMs));
+      } catch (NumberFormatException e) {
+        throw new WorkloadException("invalid " + RAMP_START_PROPERTY + ": " + e.getMessage());
+      }
+    }
     int threads = Integer.parseInt(p.getProperty("threadcount", "1"));
     if (threads < ramp[ramp.length - 1]) {
       throw new WorkloadException("-threads (" + threads + ") is below the last stage of " + RAMP_PROPERTY
@@ -311,10 +326,15 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
     rampActive = ramp.length > 0;
   }
 
-  /** The nanoseconds since the start of the ramp, which the first caller starts. */
+  /** The nanoseconds since the start of the ramp, which the first caller starts unless it is fixed. */
   private long rampOffset(long now) {
     rampStart.compareAndSet(0, now);
     return now - rampStart.get();
+  }
+
+  /** The stage of the ramp at time {@code now}: the first one until the ramp starts, the last one after it. */
+  private int stageAt(long now) {
+    return (int) Math.max(0, Math.min(ramp.length - 1, rampOffset(now) / rampStepNs));
   }
 
   @Override
@@ -322,8 +342,7 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
     if (ramp.length > 0) {
       Integer id = threadId.get();
       // Wait for the stage in which this thread becomes active; during the warm-up, that of the first stage
-      while (id != null && id >= ramp[rampActive
-          ? (int) Math.min(ramp.length - 1, rampOffset(System.nanoTime()) / rampStepNs) : 0]) {
+      while (id != null && id >= ramp[rampActive ? stageAt(System.nanoTime()) : 0]) {
         if (isStopRequested()) {
           return true;
         }
@@ -352,6 +371,9 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
       return "ramp not started";
     }
     long offset = System.nanoTime() - start;
+    if (offset < 0) {
+      return "ramp starts in " + (-offset) / 1000000000L + "s";
+    }
     int stage = (int) (offset / rampStepNs);
     if (stage >= ramp.length) {
       return "ramp over";
