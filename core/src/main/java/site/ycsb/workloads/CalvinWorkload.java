@@ -319,10 +319,11 @@ public class CalvinWorkload extends ClosedEconomyWorkload {
 
   @Override
   public boolean doTransaction(DB db, Object threadState) {
-    if (rampActive) {
+    if (ramp.length > 0) {
       Integer id = threadId.get();
-      // Wait for the stage in which this thread becomes active
-      while (id != null && id >= ramp[(int) Math.min(ramp.length - 1, rampOffset(System.nanoTime()) / rampStepNs)]) {
+      // Wait for the stage in which this thread becomes active; during the warm-up, that of the first stage
+      while (id != null && id >= ramp[rampActive
+          ? (int) Math.min(ramp.length - 1, rampOffset(System.nanoTime()) / rampStepNs) : 0]) {
         if (isStopRequested()) {
           return true;
         }

@@ -135,6 +135,14 @@ public final class Client {
   public static final String MAX_EXECUTION_TIME = "maxexecutiontime";
 
   /**
+   * The seconds that the client threads are given, once {@code maxexecutiontime} is over, to finish their
+   * current operation. The measurements are exported without those that are still stuck, so that a wedged
+   * client does not lose the results of the run (default: 60).
+   */
+  public static final String MAX_EXECUTION_GRACE = "maxexecutiongrace";
+  public static final String MAX_EXECUTION_GRACE_DEFAULT = "60";
+
+  /**
    * Whether or not this is the transaction phase (run) or not (load).
    */
   public static final String DO_TRANSACTIONS_PROPERTY = "dotransactions";
@@ -204,6 +212,39 @@ public final class Client {
     return true;
   }
 
+
+  /**
+   * Waits for the client threads, for at most {@code maxexecutiontime} plus {@code maxexecutiongrace} seconds
+   * after {@code startMs} if there is a maximum execution time. Returns the number of operations done.
+   */
+  private static int joinClients(Map<Thread, ClientThread> threads, long startMs, long maxExecutionTime,
+                                 Properties props) {
+    String grace = props.getProperty(MAX_EXECUTION_GRACE, MAX_EXECUTION_GRACE_DEFAULT);
+    long deadline = maxExecutionTime > 0 ? startMs + 1000 * (maxExecutionTime + Long.parseLong(grace))
+        : Long.MAX_VALUE;
+    int opsDone = 0;
+    int stuck = 0;
+    for (Map.Entry<Thread, ClientThread> entry : threads.entrySet()) {
+      try {
+        if (deadline == Long.MAX_VALUE) {
+          entry.getKey().join();
+        } else {
+          entry.getKey().join(Math.max(1, deadline - System.currentTimeMillis()));
+        }
+        if (entry.getKey().isAlive()) {
+          stuck++;
+        }
+        opsDone += entry.getValue().getOpsDone();
+      } catch (InterruptedException ignored) {
+        // ignored
+      }
+    }
+    if (stuck > 0) {
+      System.err.println(stuck + " client thread(s) still running " + grace + "s after the maximum execution "
+          + "time; exporting the measurements without waiting for them.");
+    }
+    return opsDone;
+  }
 
   /**
    * Exports the measurements to either sysout or a file using the exporter
@@ -360,16 +401,7 @@ public final class Client {
         terminator.start();
       }
 
-      opsDone = 0;
-
-      for (Map.Entry<Thread, ClientThread> entry : threads.entrySet()) {
-        try {
-          entry.getKey().join();
-          opsDone += entry.getValue().getOpsDone();
-        } catch (InterruptedException ignored) {
-          // ignored
-        }
-      }
+      opsDone = joinClients(threads, st, maxExecutionTime, props);
 
       en = System.currentTimeMillis();
     }
